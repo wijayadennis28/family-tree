@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Branch extends Model
 {
     protected $fillable = [
+        'family_id',
         'name',
         'description',
         'created_by',
@@ -19,25 +20,18 @@ class Branch extends Model
         'is_active' => 'boolean',
     ];
 
-    // Relationships
+    public function family(): BelongsTo
+    {
+        return $this->belongsTo(Family::class);
+    }
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    // Many‑to‑many with Family Members (via family_member_branches)
-    public function members()
+    public function members(): HasMany
     {
-        return $this->belongsToMany(FamilyMember::class, 'family_member_branches')
-                    ->withPivot('is_primary')
-                    ->withTimestamps();
-    }
-
-    // Many‑to‑many with Users (via user_branch_access)
-    public function users()
-    {
-        return $this->belongsToMany(User::class, 'user_branch_access')
-                    ->withPivot('is_primary')
-                    ->withTimestamps();
+        return $this->hasMany(FamilyMember::class);
     }
 }

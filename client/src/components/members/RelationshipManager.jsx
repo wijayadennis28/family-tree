@@ -1,33 +1,31 @@
 import { useState, useEffect, useRef } from 'react';
+import { Link } from '@phosphor-icons/react';
 import { useApi } from '../../hooks/useApi';
+import { useLanguage } from '../../context/LanguageContext';
+
+import { REL_ICON, getRelTypeKey } from '../../utils/relationshipIcons';
 
 const REL_TYPES = ['Parent', 'Child', 'Spouse', 'Sibling', 'Grandparent', 'Grandchild', 'Uncle/Aunt', 'Niece/Nephew'];
 
-const REL_ICON = {
-  Parent: '⬆️', Child: '⬇️', Spouse: '💑',
-  Sibling: '↔️', Grandparent: '⬆️⬆️', Grandchild: '⬇️⬇️',
-  'Uncle/Aunt': '↗️', 'Niece/Nephew': '↘️',
-};
+const inputClass = "w-full px-3.5 py-2.5 border-[1.5px] border-slate-200 rounded-lg text-sm text-ft-text-1 bg-white outline-none transition-all duration-200 focus:border-ft-accent focus:ring-[3px] focus:ring-ft-accent/15 placeholder:text-ft-text-3";
 
-export default function RelationshipManager({ memberId, memberName }) {
+export default function RelationshipManager({ memberId, memberName, familyId }) {
   const api = useApi();
+  const { t } = useLanguage();
 
-  // Existing relationships
-  const [rels,    setRels]    = useState([]);
+  const [rels,        setRels]        = useState([]);
   const [relsLoading, setRelsLoading] = useState(true);
 
-  // Add-new form state
   const [adding,  setAdding]  = useState(false);
   const [relType, setRelType] = useState('Child');
   const [search,  setSearch]  = useState('');
   const [results, setResults] = useState([]);
-  const [picked,  setPicked]  = useState(null);  // selected member object
+  const [picked,  setPicked]  = useState(null);
   const [saving,  setSaving]  = useState(false);
   const [error,   setError]   = useState(null);
 
   const searchRef = useRef(null);
 
-  // ── Load existing relationships ──────────────────────────
   const loadRels = async () => {
     setRelsLoading(true);
     const [data, err] = await api.get(`/members/${memberId}/relationships`);
@@ -40,18 +38,19 @@ export default function RelationshipManager({ memberId, memberName }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memberId]);
 
-  // ── Live member search ───────────────────────────────────
   useEffect(() => {
     if (!search.trim()) { setResults([]); return; }
     const t = setTimeout(async () => {
-      const [data] = await api.get(`/members?search=${encodeURIComponent(search)}`);
+      const params = new URLSearchParams();
+      params.set('search', search);
+      if (familyId) params.set('family_id', familyId);
+      const [data] = await api.get(`/members?${params}`);
       if (data) setResults(data.filter(m => String(m.id) !== String(memberId)));
     }, 280);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, memberId]);
+  }, [search, memberId, familyId]);
 
-  // ── Create relationship ──────────────────────────────────
   const handleAdd = async () => {
     if (!picked) return;
     setSaving(true);
@@ -61,7 +60,7 @@ export default function RelationshipManager({ memberId, memberName }) {
       relationship_type: relType,
     });
     if (err) {
-      setError(typeof err === 'string' ? err : 'Could not save. This link may already exist.');
+      setError(typeof err === 'string' ? err : t('relationshipManager.saveError'));
     } else {
       setAdding(false);
       setSearch('');
@@ -72,93 +71,95 @@ export default function RelationshipManager({ memberId, memberName }) {
     setSaving(false);
   };
 
-  // ── Delete relationship ──────────────────────────────────
   const handleDelete = async (relId) => {
-    if (!window.confirm('Remove this relationship?')) return;
+    if (!window.confirm(t('relationshipManager.removeConfirm'))) return;
     const [, err] = await api.delete(`/members/${memberId}/relationships/${relId}`);
     if (!err) loadRels();
   };
 
-  // ── Helpers ──────────────────────────────────────────────
   const getOtherMember = (rel) =>
     String(rel.member1_id) === String(memberId) ? rel.member2 : rel.member1;
 
-  // ── Render ───────────────────────────────────────────────
   return (
     <div>
       {/* Header row */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>
-          Showing all connections for <strong>{memberName}</strong>.
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-ft-text-2">
+          {t('relationshipManager.showingConnections', { name: memberName })}
         </p>
         {!adding && (
           <button
             onClick={() => { setAdding(true); setTimeout(() => searchRef.current?.focus(), 50); }}
-            style={{ padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}
+            className="px-4 py-2 bg-ft-accent text-white rounded-lg font-bold text-xs hover:bg-ft-accent-hover transition-colors duration-150 cursor-pointer shadow-ft-sm"
           >
-            + Add Relationship
+            + {t('relationshipManager.addRelationship')}
           </button>
         )}
       </div>
 
       {/* Add-new form */}
       {adding && (
-        <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 12, padding: 20, marginBottom: 20 }}>
-          <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-1)', marginBottom: 14 }}>
-            New Relationship
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-5">
+          <div className="font-bold text-sm text-ft-text-1 mb-3.5">
+            {t('relationshipManager.newRelationship')}
           </div>
 
-          {error && <div className="alert alert-danger" style={{ marginBottom: 12 }}>{error}</div>}
+          {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-3 text-sm mb-3">{error}</div>}
 
           {/* Relationship type pills */}
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-              {memberName} is the…
+          <div className="mb-3.5">
+            <div className="text-xs font-semibold text-ft-text-3 uppercase tracking-wider mb-2">
+              {t('relationshipManager.memberIsThe', { name: memberName })}
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {REL_TYPES.map(t => (
-                <button key={t} onClick={() => setRelType(t)}
-                  style={{ padding: '6px 12px', borderRadius: 999, border: '1.5px solid', borderColor: relType === t ? 'var(--accent)' : '#e2e8f0', background: relType === t ? 'var(--accent)' : 'var(--surface)', color: relType === t ? '#fff' : 'var(--text-2)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
-                  {REL_ICON[t]} {t}
+            <div className="flex flex-wrap gap-1.5">
+              {REL_TYPES.map(type => (
+                <button key={type} onClick={() => setRelType(type)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border-[1.5px] text-xs font-semibold cursor-pointer transition-all duration-150 ${
+                    relType === type
+                      ? 'bg-ft-accent text-white border-ft-accent'
+                      : 'bg-ft-surface text-ft-text-2 border-slate-200 hover:border-ft-accent hover:text-ft-accent'
+                  }`}>
+                  <span className="inline-flex items-center justify-center leading-none">{REL_ICON[type]}</span>
+                  <span>{t(`relTypeModal.${getRelTypeKey(type)}`)}</span>
                 </button>
               ))}
             </div>
           </div>
 
           {/* Member search */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-              …of which family member?
+          <div className="mb-3">
+            <div className="text-xs font-semibold text-ft-text-3 uppercase tracking-wider mb-1.5">
+              {t('relationshipManager.ofWhichMember')}
             </div>
             {picked ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#eef2ff', borderRadius: 8, border: '1.5px solid var(--accent)' }}>
-                <span style={{ fontWeight: 700, color: 'var(--accent)', flex: 1 }}>
+              <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-ft-accent-light rounded-lg border-[1.5px] border-ft-accent">
+                <span className="font-bold text-sm text-ft-accent flex-1">
                   {picked.name} {picked.chinese_name ? `(${picked.chinese_name})` : ''}
                 </span>
                 <button onClick={() => { setPicked(null); setSearch(''); }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: '1rem' }}>✕</button>
+                  className="bg-transparent border-none cursor-pointer text-ft-text-3 text-base hover:text-ft-text-1 transition-colors">
+                  ✕
+                </button>
               </div>
             ) : (
-              <div style={{ position: 'relative' }}>
+              <div className="relative">
                 <input
                   ref={searchRef}
                   type="text" value={search}
                   onChange={e => setSearch(e.target.value)}
-                  placeholder="Type a name to search…"
-                  style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: '0.9rem', outline: 'none' }}
+                  placeholder={t('relationshipManager.searchPlaceholder')}
+                  className={inputClass}
                 />
                 {results.length > 0 && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', zIndex: 10, maxHeight: 200, overflowY: 'auto', marginTop: 4 }}>
+                  <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg z-10 max-h-[200px] overflow-y-auto mt-1 py-1">
                     {results.map(m => (
                       <div key={m.id} onClick={() => { setPicked(m); setSearch(''); setResults([]); }}
-                        style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', fontSize: '0.875rem' }}
-                        onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                        onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                        className="px-3.5 py-2.5 cursor-pointer border-b border-slate-50 last:border-b-0 text-sm hover:bg-slate-50 transition-colors"
                       >
-                        <span style={{ fontWeight: 600 }}>{m.name}</span>
-                        {m.chinese_name && <span style={{ color: 'var(--text-2)', marginLeft: 6 }}>{m.chinese_name}</span>}
-                        <span style={{ color: 'var(--text-3)', marginLeft: 6, fontSize: '0.8rem' }}>
-                          {m.gender} {m.dob ? `· b.${m.dob.slice(0,4)}` : ''}
+                        <span className="font-semibold text-ft-text-1">{m.name}</span>
+                        {m.chinese_name && <span className="text-ft-text-2 ml-1.5">{m.chinese_name}</span>}
+                        <span className="text-ft-text-3 ml-1.5 text-xs">
+                          {m.gender ? t(`common.${m.gender.toLowerCase()}`) : ''} {m.dob ? `· ${t('relationshipManager.bornPrefix')}${m.dob.slice(0,4)}` : ''}
                         </span>
                       </div>
                     ))}
@@ -170,19 +171,27 @@ export default function RelationshipManager({ memberId, memberName }) {
 
           {/* Summary + actions */}
           {picked && (
-            <div style={{ background: '#eef2ff', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: '0.875rem', color: 'var(--accent)', fontWeight: 600 }}>
-              {memberName} is the <strong>{relType}</strong> of <strong>{picked.name}</strong>
+            <div className="bg-ft-accent-light rounded-lg px-3.5 py-2.5 mb-3.5 text-sm text-ft-accent font-semibold">
+              {t('relationshipManager.summary', {
+                memberName,
+                relType: t(`relTypeModal.${getRelTypeKey(relType)}`),
+                targetName: picked.name
+              })}
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="flex gap-2">
             <button onClick={handleAdd} disabled={!picked || saving}
-              style={{ padding: '9px 20px', background: picked ? 'var(--accent)' : '#e2e8f0', color: picked ? '#fff' : 'var(--text-3)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.875rem', cursor: picked ? 'pointer' : 'not-allowed' }}>
-              {saving ? 'Saving…' : 'Save Link'}
+              className={`px-5 py-2 rounded-lg font-bold text-sm border-none transition-all duration-150 cursor-pointer ${
+                picked
+                  ? 'bg-ft-accent text-white hover:bg-ft-accent-hover active:scale-[0.98]'
+                  : 'bg-slate-200 text-ft-text-3 cursor-not-allowed'
+              }`}>
+              {saving ? t('common.saving') : t('relationshipManager.saveLink')}
             </button>
             <button onClick={() => { setAdding(false); setSearch(''); setResults([]); setPicked(null); setError(null); }}
-              style={{ padding: '9px 20px', background: 'transparent', color: 'var(--text-2)', border: '1.5px solid #e2e8f0', borderRadius: 8, fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }}>
-              Cancel
+              className="px-5 py-2 bg-transparent text-ft-text-2 border-[1.5px] border-slate-200 rounded-lg font-semibold text-sm cursor-pointer hover:bg-ft-accent-light hover:text-ft-accent hover:border-ft-accent transition-all duration-150">
+              {t('common.cancel')}
             </button>
           </div>
         </div>
@@ -190,38 +199,40 @@ export default function RelationshipManager({ memberId, memberName }) {
 
       {/* Existing relationships list */}
       {relsLoading ? (
-        <div style={{ color: 'var(--text-3)', fontSize: '0.875rem' }}>Loading…</div>
+        <div className="text-sm text-ft-text-3">{t('common.loading')}</div>
       ) : rels.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-3)' }}>
-          <div style={{ fontSize: '2rem', marginBottom: 8 }}>🔗</div>
-          <div style={{ fontSize: '0.9rem' }}>No relationships yet. Click <strong>+ Add Relationship</strong> above.</div>
+        <div className="text-center px-4 py-8 text-ft-text-3">
+          <Link className="w-10 h-10 mx-auto mb-2 text-ft-text-3" weight="duotone" />
+          <div className="text-sm">{t('relationshipManager.empty')}</div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="flex flex-col gap-2">
           {rels.map(rel => {
             const other = getOtherMember(rel);
             if (!other) return null;
             const isDeceased = !!other.dod;
             const initials = other.name?.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
             return (
-              <div key={rel.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--surface)', border: '1.5px solid #f1f5f9', borderRadius: 10, padding: '12px 14px' }}>
+              <div key={rel.id} className="flex items-center gap-3 bg-ft-surface border border-slate-100 rounded-xl py-3 px-3.5 hover:shadow-ft-sm transition-shadow duration-150">
                 {/* Avatar */}
-                <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--accent-light)', border: `2px solid ${isDeceased ? 'var(--deceased)' : 'var(--living)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.8rem', color: 'var(--accent)', flexShrink: 0 }}>
+                <div className="w-9 h-9 rounded-full bg-ft-accent-light border-2 flex items-center justify-center text-xs font-bold text-ft-accent shrink-0"
+                  style={{ borderColor: isDeceased ? 'var(--deceased)' : 'var(--living)' }}>
                   {initials}
                 </div>
                 {/* Info */}
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--text-1)' }}>{other.name}</div>
-                  {other.chinese_name && <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>{other.chinese_name}</div>}
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm text-ft-text-1 truncate">{other.name}</div>
+                  {other.chinese_name && <div className="text-xs text-ft-text-2 truncate">{other.chinese_name}</div>}
                 </div>
                 {/* Relationship type badge */}
-                <span style={{ padding: '4px 10px', borderRadius: 999, background: 'var(--accent-light)', color: 'var(--accent)', fontSize: '0.75rem', fontWeight: 700 }}>
-                  {REL_ICON[rel.relationship_type]} {rel.relationship_type}
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-ft-accent-light text-ft-accent text-xs font-bold shrink-0">
+                  <span className="inline-flex items-center justify-center leading-none">{REL_ICON[rel.relationship_type]}</span>
+                  <span>{t(`relTypeModal.${rel.relationship_type.toLowerCase()}`)}</span>
                 </span>
                 {/* Delete */}
                 <button onClick={() => handleDelete(rel.id)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', fontSize: '1.1rem', padding: '2px 4px', lineHeight: 1 }}
-                  title="Remove relationship">
+                  className="bg-transparent border-none cursor-pointer text-slate-300 text-lg px-1 py-0 leading-none hover:text-red-400 transition-colors"
+                  title={t('relationshipManager.removeRelationship')}>
                   ×
                 </button>
               </div>

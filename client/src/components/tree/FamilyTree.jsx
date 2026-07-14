@@ -1,210 +1,358 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback, useContext, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import {
+  ReactFlow,
+  useNodesState,
+  useEdgesState,
+  ConnectionMode,
+  NodeToolbar,
+  Position,
+  Background,
+  Controls,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import { Tree } from '@phosphor-icons/react';
+import { AuthContext } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { useApi } from '../../hooks/useApi';
-import { animateTreeIn, panelIn } from '../../utils/gsapUtils';
+import { animateTreeIn } from '../../utils/gsapUtils';
+import { buildFamilyLayout } from '../../utils/familyLayout';
+import { buildTreeUrl, parseTreeSlug } from '../../utils/treeUrl';
 import TreeControls from './TreeControls';
-import MemberCard from './TreeNode';
+import FamilyNode, { MarriageNode } from './FamilyNode';
+import { FamilySpouseEdge, FamilyDropEdge, FamilyParentRailEdge } from './FamilyEdge';
+import RelTypeModal from './RelTypeModal';
+import MemberDetailPanel from './MemberDetailPanel';
 
-function FamilyUnit({ node, depth, maxDepth, onMemberClick }) {
-  if (!node) return null;
-  const showChildren = depth < maxDepth && node.children?.length > 0;
+/* ──────────────────────────────────────────
+   Floating action pill — attached to the
+   selected card via React Flow's NodeToolbar,
+   which auto-positions outside the viewport
+   transform so zoom/pan don't shift it.
 
+   Admin-gated. Ponytail: NodeToolbar handles
+   the anchoring — no more getBoundingClientRect
+   + scroll listener hack.
+   ────────────────────────────────────────── */
+function ActionPill({ onAction }) {
   return (
-    <div className="ft-family-unit">
-      <div className="ft-couple-row">
-        <MemberCard member={node} onClick={() => onMemberClick(node)} />
-        {node.spouses?.map(spouse => (
-          <div key={spouse.id} className="ft-spouse-pair">
-            <div className="ft-spouse-line" />
-            <MemberCard member={spouse} onClick={() => onMemberClick(spouse)} />
-          </div>
-        ))}
-      </div>
-
-      {showChildren && (
-        <div className="ft-children-section">
-          <div className="ft-drop-line" />
-          <div className="ft-children-row">
-            {node.children.map(child => (
-              <div key={child.id} className="ft-child-item">
-                <FamilyUnit node={child} depth={depth + 1} maxDepth={maxDepth} onMemberClick={onMemberClick} />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+    <div
+      className="action-pill"
+      onMouseDown={e => e.stopPropagation()}
+      onClick={e => e.stopPropagation()}
+    >
+      <button className="action-pill-btn" onClick={() => onAction('parent')}>Add Parent</button>
+      <span className="action-pill-sep" />
+      <button className="action-pill-btn" onClick={() => onAction('spouse')}>Add Spouse</button>
+      <span className="action-pill-sep" />
+      <button className="action-pill-btn" onClick={() => onAction('child')}>Add Child</button>
+      <span className="action-pill-sep" />
+      <button className="action-pill-btn" onClick={() => onAction('edit')}>Edit</button>
+      <span className="action-pill-sep" />
+      <button className="action-pill-btn danger" onClick={() => onAction('delete')}>Delete</button>
     </div>
   );
 }
 
-function MemberDetailPanel({ member, onClose, onNavigate }) {
-  const panelRef = useRef(null);
-  useEffect(() => { panelIn(panelRef.current); }, [member]);
-
-  const isDeceased = !member.is_living;
-  const initials = member.name
-    ? member.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-    : '?';
-
-  return (
-    <div className="member-detail-overlay" onClick={onClose}>
-      <div ref={panelRef} className="member-detail-panel" onClick={e => e.stopPropagation()}>
-        <div className="detail-header">
-          <button className="detail-close" onClick={onClose}>x</button>
-          <div className={`detail-avatar${isDeceased ? ' is-deceased' : ''}`}>
-            {member.photo ? <img src={member.photo} alt={member.name} /> : initials}
-          </div>
-          <div className="detail-name">{member.name}</div>
-          {member.chinese_name && <div className="detail-chinese">{member.chinese_name}</div>}
-          <span className={`detail-badge ${isDeceased ? 'badge-deceased' : 'badge-living'}`}>
-            {isDeceased ? 'Deceased' : 'Living'}
-          </span>
-        </div>
-
-        <div className="detail-body">
-          {member.dob && (
-            <div className="detail-row">
-              <span className="detail-row-label">Born</span>
-              <span className="detail-row-value">{member.dob}</span>
-            </div>
-          )}
-          {member.dod && (
-            <div className="detail-row">
-              <span className="detail-row-label">Died</span>
-              <span className="detail-row-value">{member.dod}</span>
-            </div>
-          )}
-          {member.place_of_birth && (
-            <div className="detail-row">
-              <span className="detail-row-label">Birthplace</span>
-              <span className="detail-row-value">{member.place_of_birth}</span>
-            </div>
-          )}
-          {member.gender && (
-            <div className="detail-row">
-              <span className="detail-row-label">Gender</span>
-              <span className="detail-row-value">{member.gender}</span>
-            </div>
-          )}
-          {member.biography && (
-            <div className="detail-row" style={{ flexDirection: 'column', gap: 4 }}>
-              <span className="detail-row-label">Biography</span>
-              <span className="detail-bio">{member.biography}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="detail-actions">
-          <button className="btn-accent" onClick={() => onNavigate(member.id)}>View Their Tree</button>
-          <button className="btn-ghost" onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function countNodes(node, depth, maxDepth) {
-  if (!node || depth > maxDepth) return 0;
+/* ──────────────────────────────────────────
+   Node counter for the sub-header label.
+   ────────────────────────────────────────── */
+function countNodes(node) {
+  if (!node) return 0;
   let count = 1 + (node.spouses?.length || 0);
-  if (node.children) node.children.forEach(c => { count += countNodes(c, depth + 1, maxDepth); });
+  if (node.children) node.children.forEach(c => { count += countNodes(c); });
   return count;
 }
 
+/* ──────────────────────────────────────────
+   Directional-type body for Add / Connect ops.
+   Mirrors RelationshipCanvas.buildRelBody.
+   ────────────────────────────────────────── */
+function buildRelBody(sourceId, targetId, type, { fromPill = false } = {}) {
+  if (type === 'Child') {
+    return { relationship_type: 'Parent', parent_id: sourceId, child_id: targetId };
+  }
+  if (type === 'Parent') {
+    // Pill "Add Parent": selected member is the child, picked member is the new parent
+    if (fromPill) {
+      return { relationship_type: 'Parent', parent_id: targetId, child_id: sourceId };
+    }
+    return { relationship_type: 'Parent', parent_id: sourceId, child_id: targetId };
+  }
+  if (type === 'Spouse') {
+    return { member2_id: targetId, relationship_type: 'Spouse', status: 'Married' };
+  }
+  return { member2_id: targetId, relationship_type: type };
+}
+
+/** Locate a member inside the nested tree (includes spouse back-links). */
+function findTreeNode(node, id) {
+  if (!node) return null;
+  if (node.id === id) return node;
+  for (const s of node.spouses || []) {
+    if (s.id === id) {
+      return {
+        ...s,
+        spouses: [
+          { id: node.id, name: node.name },
+          ...(node.spouses || []).filter(x => x.id !== s.id),
+        ],
+      };
+    }
+  }
+  for (const c of node.children || []) {
+    const found = findTreeNode(c, id);
+    if (found) return found;
+  }
+  for (const p of node.parents || []) {
+    const found = findTreeNode(p, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+/* ═══════════════════════════════════════════
+   Main FamilyTree — unified React Flow canvas
+   with automatic layout.
+   ═══════════════════════════════════════════ */
 export default function FamilyTree() {
-  const { memberId } = useParams();
+  const { memberSlug, familyId: familyIdParam } = useParams();
+  const memberId = familyIdParam ? null : parseTreeSlug(memberSlug);
+  const familyId = familyIdParam ? Number(familyIdParam) : null;
+  const isFamilyView = Boolean(familyId);
   const api = useApi();
   const navigate = useNavigate();
+  const { hasAbility, activeFamily } = useContext(AuthContext);
+  const { t } = useLanguage();
+  const canEdit = hasAbility('edit_tree', activeFamily?.id);
+  const canDelete = hasAbility('delete_member', activeFamily?.id);
 
+  // ── data ──────────────────────────────────
   const [treeData,       setTreeData]       = useState(null);
   const [loading,        setLoading]        = useState(true);
   const [error,          setError]          = useState(null);
-  const [depth,          setDepth]          = useState(3);
+
+  // ── selection ─────────────────────────────
   const [selectedMember, setSelectedMember] = useState(null);
-  const [zoom,           setZoom]           = useState(1);
-  const [pan,            setPan]            = useState({ x: 0, y: 0 });
-  const [isPanning,      setIsPanning]      = useState(false);
+  const [pillAction,     setPillAction]     = useState(null);
 
-  const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
-  const treeRef  = useRef(null);
-  const viewRef  = useRef(null);
-  const touchStart = useRef(null);
+  // ── edit mode ─────────────────────────────
+  const [editMode,       setEditMode]       = useState(false);
+  const [editConnection, setEditConnection] = useState(null);
 
-  useEffect(() => {
-    if (!memberId) return;
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      const [data, err] = await api.get(`/tree/${memberId}?depth=${depth}&ancestors=2`);
-      if (cancelled) return;
+  // ── React Flow state ──────────────────────
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [zoomLevel, setZoomLevel]       = useState(1);
+  const rfRef = useRef(null);
+
+  // ── derived ───────────────────────────────
+  const selectedMemberId = useMemo(
+    () => selectedMember ? `m-${selectedMember.id}` : null,
+    [selectedMember],
+  );
+  const memberCount = useMemo(
+    () => {
+      if (!treeData) return 0;
+      const roots = Array.isArray(treeData) ? treeData : [treeData];
+      return roots.reduce((sum, root) => sum + countNodes(root), 0);
+    },
+    [treeData],
+  );
+
+  const pillSpouseOptions = useMemo(() => {
+    if (!pillAction || !selectedMember || !treeData) return [];
+    if (pillAction.type !== 'Child' && pillAction.type !== 'Parent') return [];
+    const node = findTreeNode(treeData, selectedMember.id);
+    return (node?.spouses || []).map(s => ({ id: s.id, name: s.name }));
+  }, [pillAction, selectedMember, treeData]);
+
+  /* ── API: fetch tree ─────────────────── */
+  const refreshTree = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    if (isFamilyView) {
+      const [data, err] = await api.get(`/families/${familyId}/tree`);
+      if (err) setError(err);
+      else setTreeData(data?.roots || []);
+    } else {
+      if (!memberId) return;
+      const familyParam = activeFamily?.id ? `&family_id=${activeFamily.id}` : '';
+      const [data, err] = await api.get(`/tree/${memberId}?ancestors=2${familyParam}`);
       if (err) setError(err);
       else setTreeData(data);
-      setLoading(false);
-    };
-    load();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [memberId, depth]);
+    }
+    setLoading(false);
+  }, [memberId, familyId, isFamilyView, activeFamily, api]);
 
   useEffect(() => {
-    if (treeData && treeRef.current && !loading) animateTreeIn(treeRef.current);
+    refreshTree();
+  }, [refreshTree]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── build tree layout ────────────────── */
+  useEffect(() => {
+    if (!treeData) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { nodes: rfNodes, edges: rfEdges } = await buildFamilyLayout(treeData);
+      if (cancelled) return;
+      setNodes(rfNodes);
+      setEdges(rfEdges);
+    })();
+    return () => { cancelled = true; };
+  }, [treeData, setNodes, setEdges]);
+
+  /* ── edit-mode handles toggle ────────── */
+  useEffect(() => {
+    setNodes(nds => nds.map(n =>
+      n.type === 'family' ? { ...n, data: { ...n.data, editMode } } : n,
+    ));
+  }, [editMode, setNodes]);
+
+  /* ── GSAP entrance animation ─────────── */
+  useEffect(() => {
+    if (treeData && !loading) {
+      // ponytail: the ReactFlow container becomes the animation target
+      const el = document.querySelector('.ft-reactflow-container');
+      if (el) animateTreeIn(el);
+    }
   }, [treeData, loading]);
 
-  const handleWheel = useCallback((e) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.08 : 0.08;
-    setZoom(z => parseFloat(Math.min(Math.max(z + delta, 0.25), 2.5).toFixed(2)));
+  /* ── handlers ────────────────────────── */
+
+  // Card click → select + show pill (NodeToolbar) + inspector
+  const handleMemberClick = useCallback((member, _event) => {
+    if (!member) { setSelectedMember(null); return; }
+    setSelectedMember(member);
   }, []);
 
-  useEffect(() => {
-    const el = viewRef.current;
-    if (!el) return;
-    el.addEventListener('wheel', handleWheel, { passive: false });
-    return () => el.removeEventListener('wheel', handleWheel);
-  }, [handleWheel]);
+  // React Flow onNodeClick → extract member from node data
+  const onNodeClick = useCallback((_event, node) => {
+    if (node.type === 'marriage') return;
+    handleMemberClick(node.data.member);
+  }, [handleMemberClick]);
 
-  const handleMouseDown = (e) => {
-    if (e.button !== 0) return;
-    setIsPanning(true);
-    panStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
-  };
-  const handleMouseMove = (e) => {
-    if (!isPanning) return;
-    setPan({
-      x: panStart.current.panX + (e.clientX - panStart.current.x),
-      y: panStart.current.panY + (e.clientY - panStart.current.y),
-    });
-  };
-  const handleMouseUp = () => setIsPanning(false);
-
-  const handleTouchStart = (e) => {
-    if (e.touches.length !== 1) return;
-    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, panX: pan.x, panY: pan.y };
-  };
-  const handleTouchMove = (e) => {
-    if (!touchStart.current || e.touches.length !== 1) return;
-    e.preventDefault();
-    setPan({
-      x: touchStart.current.panX + (e.touches[0].clientX - touchStart.current.x),
-      y: touchStart.current.panY + (e.touches[0].clientY - touchStart.current.y),
-    });
+  // Pill button → action
+  const handlePillAction = (action) => {
+    if (!selectedMember) return;
+    if (action === 'edit') {
+      navigate(`/people/${selectedMember.id}/edit`);
+      return;
+    }
+    if (action === 'delete') {
+      if (canDelete) handleDelete(selectedMember);
+      return;
+    }
+    const type = action === 'parent' ? 'Parent'
+              : action === 'child'  ? 'Child'
+              : 'Spouse';
+    setPillAction({ type, sourceId: selectedMember.id, sourceName: selectedMember.name });
   };
 
-  const handleNavigate = (id) => {
+  // Save new relationship from pill modal
+  const handleSaveRel = async (payload) => {
+    if (!pillAction) return;
+    const { type, sourceId, targetId, selectedSpouses = [] } = payload || {};
+    const body = buildRelBody(Number(sourceId), Number(targetId), type, { fromPill: true });
+    const [, err] = await api.post(`/members/${sourceId}/relationships`, body);
+    if (err) return;
+
+    if (type === 'Child' && selectedSpouses.length > 0) {
+      for (const spouseId of selectedSpouses) {
+        if (Number(spouseId) === Number(sourceId)) continue;
+        const coBody = buildRelBody(Number(spouseId), Number(targetId), 'Child');
+        await api.post(`/members/${spouseId}/relationships`, coBody);
+      }
+    }
+
+    setPillAction(null);
+    await refreshTree();
+  };
+
+  // Delete member
+  const handleDelete = async (member) => {
+    if (!window.confirm(`Delete ${member.name}? This will detach their relationships.`)) return;
+    const [, err] = await api.delete(`/members/${member.id}`);
+    if (!err) {
+      setSelectedMember(null);
+      setPillAction(null);
+      navigate(String(memberId) === String(member.id) ? '/people' : buildTreeUrl(member));
+    }
+  };
+
+  const handleNavigate = (member) => {
     setSelectedMember(null);
-    setPan({ x: 0, y: 0 });
-    setZoom(1);
-    navigate(`/tree/${id}`);
+    setPillAction(null);
+    navigate(buildTreeUrl(member));
   };
 
-  const memberCount = treeData ? countNodes(treeData, 0, depth) : 0;
+  // ── edit-mode connection ────────────── */
 
-  if (!memberId) {
+  /** When user drags a handle to another node, open RelTypeModal to confirm */
+  const onConnect = useCallback((connection) => {
+    const srcNode = nodes.find(n => n.id === connection.source);
+    const tgtNode = nodes.find(n => n.id === connection.target);
+    if (!srcNode?.data?.member || !tgtNode?.data?.member) return;
+
+    setEditConnection({
+      sourceId:   srcNode.data.member.id,
+      sourceName: srcNode.data.member.name,
+      targetId:   tgtNode.data.member.id,
+      targetName: tgtNode.data.member.name,
+    });
+  }, [nodes]);
+
+  /** Save connection from edit-mode drag modal */
+  const handleEditConnectSave = async (payload) => {
+    if (!editConnection) return;
+    const { type, sourceId, targetId } = payload || {};
+    const body = buildRelBody(Number(sourceId), Number(targetId), type);
+    const [, err] = await api.post(`/members/${sourceId}/relationships`, body);
+    if (!err) {
+      setEditConnection(null);
+      await refreshTree();
+    }
+  };
+
+  // ── picker exclusions ───────────────── */
+
+  const pickerExcludeIds = (() => {
+    if (!pillAction || !selectedMember) return [];
+    const ids = new Set([selectedMember.id]);
+    if (pillAction.type === 'Parent') {
+      const collect = (n) => {
+        if (!n) return;
+        (n.parents || []).forEach(p => ids.add(p.id));
+        (n.children || []).forEach(c => collect(c));
+      };
+      if (treeData?.id === selectedMember.id) collect(treeData);
+    } else if (pillAction.type === 'Child') {
+      (treeData?.children || []).forEach(c => ids.add(c.id));
+    }
+    return Array.from(ids);
+  })();
+
+  // ── node / edge type maps ───────────── */
+  const nodeTypes = useMemo(() => ({ family: FamilyNode, marriage: MarriageNode }), []);
+  const edgeTypes = useMemo(() => ({
+    'family-spouse': FamilySpouseEdge,
+    'family-drop': FamilyDropEdge,
+    'family-parent-rail': FamilyParentRailEdge,
+  }), []);
+
+  /* ── render ──────────────────────────── */
+
+  if (!memberId && !isFamilyView) {
     return (
       <div className="tree-empty">
-        <div className="tree-empty-icon">tree</div>
+        <div className="tree-empty-icon"><Tree /></div>
         <h2>No family member selected</h2>
-        <p>Go to Members and click "View Tree" on any person to start exploring.</p>
+        <p>Go to People and click "View Atlas" on any person to start exploring.</p>
       </div>
     );
   }
@@ -212,27 +360,16 @@ export default function FamilyTree() {
   return (
     <div className="ft-page">
       <TreeControls
-        depth={depth} onDepthChange={setDepth}
-        zoom={zoom}
-        onZoomIn={() => setZoom(z => parseFloat(Math.min(z + 0.1, 2.5).toFixed(2)))}
-        onZoomOut={() => setZoom(z => parseFloat(Math.max(z - 0.1, 0.25).toFixed(2)))}
-        onReset={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
-        memberName={treeData?.name}
+        zoomLevel={zoomLevel}
+        onZoomIn={() => rfRef.current?.zoomIn({ duration: 200 })}
+        onZoomOut={() => rfRef.current?.zoomOut({ duration: 200 })}
+        onReset={() => rfRef.current?.fitView({ duration: 300, padding: 0.2 })}
         memberCount={memberCount}
+        editMode={editMode}
+        onToggleEditMode={isFamilyView ? undefined : () => setEditMode(m => !m)}
       />
 
-      <div
-        ref={viewRef}
-        className="ft-viewport"
-        style={{ cursor: isPanning ? 'grabbing' : 'grab' }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={() => { touchStart.current = null; }}
-      >
+      <div className="ft-reactflow-container">
         {loading && (
           <div className="ft-loading">
             <div className="ft-loading-spinner" />
@@ -244,50 +381,99 @@ export default function FamilyTree() {
           <div className="ft-error">Could not load tree. Please check the member ID and try again.</div>
         )}
 
-        {!loading && treeData && (
-          <div
-            className="ft-canvas"
-            ref={treeRef}
-            style={{
-              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-              transformOrigin: 'center top',
-            }}
-          >
-            {treeData.parents?.length > 0 && (
-              <div className="ft-parents-section">
-                <div className="ft-parents-row">
-                  {treeData.parents.map(parent => (
-                    <div key={parent.id} className="ft-parent-item">
-                      <MemberCard member={parent} compact onClick={() => setSelectedMember(parent)} />
-                      {parent.spouses?.map(s => (
-                        <div key={s.id} className="ft-spouse-pair">
-                          <div className="ft-spouse-line" />
-                          <MemberCard member={s} compact onClick={() => setSelectedMember(s)} />
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <FamilyUnit
-              node={treeData}
-              depth={0}
-              maxDepth={depth}
-              onMemberClick={setSelectedMember}
-            />
+        {!loading && Array.isArray(treeData) && treeData.length === 0 && isFamilyView && (
+          <div className="ft-error">
+            {t('families.noMembersError')}
           </div>
+        )}
+
+        {!loading && treeData && (
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onNodeClick={onNodeClick}
+            onConnect={editMode ? onConnect : undefined}
+            onInit={inst => { rfRef.current = inst; setZoomLevel(inst.getZoom?.() ?? 1); }}
+            onMove={(_, vp) => setZoomLevel(vp.zoom)}
+            nodesDraggable={editMode}
+            nodesConnectable={editMode}
+            elementsSelectable={editMode}
+            connectionMode={ConnectionMode.Loose}
+            fitView
+            fitViewOptions={{ padding: 0.2 }}
+            minZoom={0.25}
+            maxZoom={2.5}
+            defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background color="#E5EAF2" gap={22} size={1} />
+            <Controls
+              showInteractive={false}
+              position="bottom-right"
+              style={{
+                display: 'flex',
+                flexDirection: 'row',
+                gap: 4,
+                background: 'white',
+                border: '1px solid var(--border-hair, #E5EAF2)',
+                borderRadius: 'var(--r-tile, 14px)',
+                padding: '4px 8px',
+                boxShadow: 'none',
+              }}
+            />
+
+            {/* ActionPill — ability-gated, NodeToolbar-anchored to the selected card */}
+            {canEdit && selectedMemberId && !editMode && !isFamilyView && (
+              <NodeToolbar
+                nodeId={selectedMemberId}
+                position={Position.Bottom}
+                align="center"
+                offset={8}
+              >
+                <ActionPill onAction={handlePillAction} />
+              </NodeToolbar>
+            )}
+          </ReactFlow>
         )}
       </div>
 
+      {/* Right inspector */}
       {selectedMember && (
         <MemberDetailPanel
           member={selectedMember}
-          onClose={() => setSelectedMember(null)}
+          treeData={treeData}
+          onClose={() => { setSelectedMember(null); setPillAction(null); }}
           onNavigate={handleNavigate}
         />
       )}
+
+      {/* Pill-action modal (targetPicker — source-only, pick target from list) */}
+      <RelTypeModal
+        open={!!pillAction}
+        sourceId={pillAction?.sourceId}
+        sourceName={pillAction?.sourceName}
+        defaultType={pillAction?.type}
+        targetPicker
+        targetPickerExcludeIds={pickerExcludeIds}
+        spouseOptions={pillSpouseOptions}
+        onSave={handleSaveRel}
+        onCancel={() => setPillAction(null)}
+      />
+
+      {/* Edit-mode drag-connect modal (both ends known) */}
+      <RelTypeModal
+        open={!!editConnection}
+        sourceId={editConnection?.sourceId}
+        sourceName={editConnection?.sourceName}
+        targetId={editConnection?.targetId}
+        targetName={editConnection?.targetName}
+        onSave={handleEditConnectSave}
+        onCancel={() => setEditConnection(null)}
+      />
     </div>
   );
 }

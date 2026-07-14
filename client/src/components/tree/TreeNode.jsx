@@ -1,7 +1,8 @@
 import { useRef } from 'react';
 import { cardHoverIn, cardHoverOut } from '../../utils/gsapUtils';
+import { STORAGE_URL } from '../../utils/storageUrl';
 
-export default function MemberCard({ member, onClick, compact }) {
+export default function MemberCard({ member, onClick, compact, enterDelay, isSelected }) {
   const cardRef = useRef(null);
 
   const initials = member?.name
@@ -11,23 +12,27 @@ export default function MemberCard({ member, onClick, compact }) {
   const genderClass = member?.gender?.toLowerCase() || 'other';
   const isDeceased = !member?.is_living;
 
+  // ponytail: forward the React event so callers can measure the card
+  // for overlay-anchored UI (the ActionPill in FamilyTree).
+  const handleClick = (e) => onClick?.(e, member);
+
   return (
     <div
       ref={cardRef}
-      className={`member-card ${genderClass}${compact ? ' compact' : ''}`}
-      onClick={onClick}
+      className={`member-card ${genderClass}${compact ? ' compact' : ''}${isDeceased ? ' deceased' : ''}${isSelected ? ' selected' : ''} card-enter`}
+      style={{ '--enter-delay': enterDelay ?? '0ms' }}
+      onClick={handleClick}
       onMouseEnter={() => cardHoverIn(cardRef.current)}
       onMouseLeave={() => cardHoverOut(cardRef.current)}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onClick?.()}
+      onKeyDown={(e) => e.key === 'Enter' && onClick?.(e, member)}
     >
       <div className={`member-avatar${isDeceased ? ' is-deceased' : ''}`}>
         {member?.photo
-          ? <img src={member.photo} alt={member.name} />
+          ? <img src={`${STORAGE_URL}/${member.photo}`} alt={member.name} />
           : <span>{initials}</span>
         }
-        <div className={`living-dot${isDeceased ? ' deceased' : ''}`} />
       </div>
 
       <div className="member-name">{member?.name}</div>

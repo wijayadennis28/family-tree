@@ -26,9 +26,10 @@ class RouteServiceProvider extends ServiceProvider
     {
         RateLimiter::for('api', function (Request $request) {
             // Authenticated users get a generous limit; guests get a tighter one
+            // Dev: increased limits to accommodate React StrictMode double-invocation
             return $request->user()
-                ? Limit::perMinute(300)->by($request->user()->id)
-                : Limit::perMinute(30)->by($request->ip());
+                ? Limit::perMinute(600)->by($request->user()->id)
+                : Limit::perMinute(120)->by($request->ip());
         });
 
         $this->routes(function () {

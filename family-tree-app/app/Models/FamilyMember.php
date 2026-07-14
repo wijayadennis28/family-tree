@@ -10,6 +10,8 @@ class FamilyMember extends Model
 {
     protected $fillable = [
         'user_id',
+        'family_id',
+        'branch_id',
         'name',
         'chinese_name',
         'gender',
@@ -37,6 +39,16 @@ class FamilyMember extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function family(): BelongsTo
+    {
+        return $this->belongsTo(Family::class);
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
     // A member can be on either side of a relationship
     public function relationshipsAsMember1(): HasMany
     {
@@ -46,14 +58,6 @@ class FamilyMember extends Model
     public function relationshipsAsMember2(): HasMany
     {
         return $this->hasMany(Relationship::class, 'member2_id');
-    }
-
-    // Many‑to‑many with Branches (via family_member_branches)
-    public function branches()
-    {
-        return $this->belongsToMany(Branch::class, 'family_member_branches', 'member_id', 'branch_id')
-                    ->withPivot('is_primary')
-                    ->withTimestamps();
     }
 
     // Many‑to‑many with Events (via event_members)

@@ -3,45 +3,78 @@
    ===================================================================== */
 
 :root {
-  /* Palette */
-  --bg:           #f0f4f8;
+  /* Palette — Family Atlas blue-gray design system */
+  --bg:           #f6f8fb;
   --surface:      #ffffff;
   --surface-2:    #f8fafc;
-  --header-bg:    #1a2035;
-  --header-text:  #e2e8f0;
-  --accent:       #6366f1;
-  --accent-hover: #4f46e5;
-  --accent-light: #eef2ff;
+  --header-bg:    #0f172a;
+  --header-text:  #f1f5f9;
+  --accent:       #2f6bff;
+  --accent-hover: #1a52d8;
+  --accent-light: #eff4ff;
 
   /* Status */
   --living:    #22c55e;
   --deceased:  #94a3b8;
-  --male:      #6366f1;
+  --male:      #2f6bff;
   --female:    #ec4899;
   --other:     #f59e0b;
 
   /* Text */
-  --text-1: #1e293b;
-  --text-2: #475569;
+  --text-1: #111827;
+  --text-2: #64748b;
   --text-3: #94a3b8;
 
-  /* Connector lines */
-  --line:   #cbd5e1;
-  --line-w: 2px;
+  /* Lines / borders — line for connectors, hair for card edges */
+  --line:        #d6dce8;
+  --line-w:      2px;
+  --border-hair: #e5eaf2;
 
-  /* Shadows */
-  --shadow-sm:  0 2px 8px rgba(0,0,0,0.07);
-  --shadow-md:  0 4px 20px rgba(0,0,0,0.09);
-  --shadow-lg:  0 8px 32px rgba(0,0,0,0.14);
+  /* Rail / selection accents */
+  --rail-active:        #eff6ff;
+  --rail-active-border: #cfe0ff;
+  --avatar-selected:    #eaf1ff;
+  --selected-ring:      #9dbdff;
+
+  /* Avatar pastel tints — flat fill, no ring */
+  --avatar-tint-male:     #eaf1ff;
+  --avatar-tint-female:   #f0ecfa;
+  --avatar-tint-other:    #faf0e6;
+  --avatar-tint-deceased:#e9eef8;
+  --avatar-tint-base:     #f1f5f9;
+
+  /* Relationship edge status colors */
+  --status-married:  #059669;
+  --status-divorced: #e11d48;
+  --status-other:    #64748b;
+
+  /* Shadows — softer, diffused per Family Atlas design */
+  --shadow-sm:  0 2px 8px rgba(15,23,42,0.06);
+  --shadow-md:  0 8px 18px rgba(15,23,42,0.08);
+  --shadow-lg:  0 8px 20px rgba(15,23,42,0.10);
+  --shadow-xl:  0 12px 32px rgba(15,23,42,0.12);
 
   /* Radii */
-  --r-card: 14px;
-  --r-btn:  8px;
-  --r-pill: 999px;
+  --r-card:    18px;
+  --r-tile:    16px;
+  --r-tile-sm: 14px;
+  --r-btn:     6px;
+  --r-pill:    999px;
 
   /* Connector spacing */
-  --conn-v: 32px;
-  --conn-h: 20px;
+  --conn-v: 50px;
+  --conn-h: 30px;
+
+  /* Glass — frosted white */
+  --glass:         rgba(255, 255, 255, 0.75);
+  --glass-border:  rgba(255, 255, 255, 0.5);
+  --glass-blur:    15px;
+
+  /* Motion — smoother easing */
+  --t-fast:  150ms;
+  --t-base:  250ms;
+  --t-slow:  400ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ── Reset ─────────────────────────────────────────────── */
@@ -58,157 +91,47 @@ body {
   line-height: 1.5;
 }
 
+/* ponytail: respect motion prefs. The 0.01ms trick lets animations
+   still "complete" (so end-states apply) but cuts the visible motion
+   to nothing. !important is required — some component CSS sets
+   transitions inline and wins specificity otherwise. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration:         0.01ms !important;
+    animation-iteration-count:  1       !important;
+    transition-duration:        0.01ms !important;
+    scroll-behavior:            auto    !important;
+  }
+}
+
 /* ── App shell ─────────────────────────────────────────── */
-.app { display: flex; flex-direction: column; min-height: 100vh; }
+.app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
 .app-body {
   display: flex;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
 .app-main {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 0;
   display: flex;
   flex-direction: column;
 }
-
-/* ── Header ─────────────────────────────────────────────── */
-.app-header {
-  background: var(--header-bg);
-  color: var(--header-text);
-  padding: 0 24px;
-  height: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.25);
-}
-
-.app-header .logo {
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-decoration: none;
-}
-.app-header .logo-icon {
-  font-size: 1.4rem;
-}
-
-.app-header nav {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.app-header nav a {
-  color: var(--header-text);
-  text-decoration: none;
-  font-size: 0.875rem;
-  font-weight: 500;
-  padding: 6px 12px;
-  border-radius: var(--r-btn);
-  transition: background 0.15s;
-}
-.app-header nav a:hover,
-.app-header nav a.active { background: rgba(255,255,255,0.12); }
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.header-user {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.85rem;
-  color: var(--header-text);
-}
-.header-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 0.8rem;
-  color: #fff;
-  flex-shrink: 0;
-}
-.btn-logout {
-  background: rgba(255,255,255,0.1);
-  border: 1px solid rgba(255,255,255,0.15);
-  color: var(--header-text);
-  padding: 6px 14px;
-  border-radius: var(--r-btn);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: background 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.btn-logout:hover { background: rgba(239,68,68,0.3); border-color: transparent; }
-
-/* ── Sidebar ─────────────────────────────────────────────── */
-.app-sidebar {
-  width: 220px;
-  background: var(--surface);
-  border-right: 1px solid #e2e8f0;
-  flex-shrink: 0;
-  padding: 20px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow-y: auto;
-}
-.sidebar-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-3);
-  padding: 8px 10px 4px;
-}
-.app-sidebar a {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: var(--r-btn);
-  text-decoration: none;
-  color: var(--text-2);
-  font-size: 0.875rem;
-  font-weight: 500;
-  transition: background 0.15s, color 0.15s;
-}
-.app-sidebar a:hover { background: var(--accent-light); color: var(--accent); }
-.app-sidebar a.active {
-  background: var(--accent-light);
-  color: var(--accent);
-  font-weight: 600;
-}
-.app-sidebar a svg { flex-shrink: 0; }
-
 /* ── Auth pages ─────────────────────────────────────────── */
 .auth-page {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #1a2035 0%, #2d3a6b 50%, #1a2035 100%);
+  background: linear-gradient(135deg, var(--header-bg) 0%, #1e293b 50%, var(--header-bg) 100%);
   padding: 24px;
 }
 .auth-card {
@@ -338,114 +261,41 @@ body {
 .ft-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 60px);
+  height: calc(100vh - 64px);   /* below the 64px app header */
   overflow: hidden;
+  background: var(--bg);
+  position: relative;
+}
+
+/* ponytail: old floating glass toolbar + center chip removed in Phase B;
+   zoom/depth controls now live in the FamilyTree sub-header (TreeControls.jsx). */
+
+/* Ensure the react-flow canvas fills the viewport */
+.react-flow__container {
+  flex: 1;
+  min-height: 0;
+}
+
+.canvas-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
   background: var(--bg);
 }
 
-/* Controls bar */
-.ft-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 20px;
-  background: var(--surface);
-  border-bottom: 1px solid #e2e8f0;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
-.ft-controls-title {
-  font-weight: 700;
-  font-size: 1rem;
-  color: var(--text-1);
-  margin-right: 8px;
-}
-.ft-controls-sep {
-  width: 1px;
-  height: 24px;
-  background: #e2e8f0;
-}
-.ft-depth-label {
-  font-size: 0.8rem;
-  color: var(--text-2);
-  font-weight: 600;
-}
-.ft-depth-btns {
-  display: flex;
-  gap: 4px;
-}
-.ft-depth-btns button {
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
-  border: 1.5px solid #e2e8f0;
-  background: var(--surface);
-  font-size: 0.8rem;
-  font-weight: 700;
-  cursor: pointer;
-  color: var(--text-2);
-  transition: all 0.15s;
-}
-.ft-depth-btns button.active,
-.ft-depth-btns button:hover {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
-}
-.ft-zoom-btns {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-.ft-zoom-btns button {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  border: 1.5px solid #e2e8f0;
-  background: var(--surface);
-  font-size: 1rem;
-  cursor: pointer;
-  color: var(--text-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-}
-.ft-zoom-btns button:hover {
-  background: var(--accent-light);
-  color: var(--accent);
-  border-color: var(--accent);
-}
-.ft-zoom-level {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-2);
-  min-width: 40px;
-  text-align: center;
-}
-.ft-member-count {
-  margin-left: auto;
-  font-size: 0.8rem;
-  color: var(--text-3);
-}
-
-/* Viewport (zoomable/pannable area) */
-.ft-viewport {
+/* Unified React Flow canvas container — replaces .ft-viewport + .ft-canvas.
+   Ponytail: dotted background now drawn by ReactFlow <Background> component;
+   this wrapper just owns flex sizing. */
+.ft-reactflow-container {
   flex: 1;
-  overflow: hidden;
+  min-height: 0;
   position: relative;
-  cursor: grab;
+  background: var(--bg);
 }
-.ft-viewport:active { cursor: grabbing; }
-
-.ft-canvas {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 48px 80px 80px;
-  transform-origin: center top;
-  min-width: max-content;
-  will-change: transform;
+.ft-reactflow-container .react-flow {
+  --xy-edge-stroke-default: var(--line);
+  --xy-edge-stroke-width-default: 1.5px;
 }
 
 /* Loading state */
@@ -480,336 +330,497 @@ body {
   font-size: 0.95rem;
 }
 
-/* ── Parents section (above root) ─────────────────────── */
-.ft-parents-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 0;
+/* ── React Flow family node + marriage node ───────────────
+   Ponytail: …nentwrapper around MemberCard. ReactFlow owns
+   positioning; card styling is unchanged. Marriage node is
+   the invisible anchor ELK uses to center children under a
+   couple. */
+.family-node {
+  display: inline-flex;
+  /* handles anchored to the card edges via ReactFlow Position */
 }
-.ft-parents-row {
-  display: flex;
-  gap: 0;
-  justify-content: center;
-  align-items: flex-start;
-}
-.ft-parent-item {
-  display: flex;
-  align-items: flex-start;
-  padding: 0 24px;
-  position: relative;
-}
-/* Connector line down from parent to root */
-.ft-parents-section::after {
-  content: '';
-  display: block;
-  width: var(--line-w);
-  height: var(--conn-v);
-  background: var(--line);
-  margin: 0 auto;
+.marriage-node {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
 }
 
-/* ── Family unit (person + spouse + children) ─────────── */
-.ft-family-unit {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+/* ponytail: handles are conditionally rendered in FamilyNode (only in
+   edit mode). Inline style in FamilyNode.jsx owns final appearance;
+   this class on the wrapper keeps cursors / hover state in sync. */
+.family-node { display: inline-flex; }
+.family-node.edit-mode { cursor: crosshair; }
+
+/* ── React Flow custom edges — soft editorial connectors ──── */
+.family-edge {
+  stroke: #c9d2e3;
+  stroke-width: 1.5px;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.family-spouse-edge {
+  stroke: var(--accent);
+  stroke-width: 2px;
+  opacity: 0.85;
+}
+.family-drop-edge {
+  stroke: #c9d2e3;
+  stroke-width: 1.5px;
+}
+.family-parent-rail-edge {
+  stroke: #c9d2e3;
+  stroke-width: 2px;
 }
 
-/* Couple row: member + heart connector + spouse */
-.ft-couple-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 0;
-}
-.ft-spouse-pair {
-  display: flex;
-  align-items: flex-start;
-}
-.ft-spouse-line {
-  width: 20px;
-  height: 36px; /* aligns with avatar vertical center */
-  border-bottom: var(--line-w) solid #ec4899;
-  position: relative;
-  flex-shrink: 0;
-  margin-top: 16px; /* push down to avatar midpoint */
+/* NodeToolbar hosts the ActionPill — drop the default node-toolbar
+   backdrop so the pill sits clean on the canvas. */
+.react-flow__node-toolbar {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
 }
 
-/* Children section */
-.ft-children-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.ft-drop-line {
-  width: var(--line-w);
-  height: var(--conn-v);
-  background: var(--line);
-}
-.ft-children-row {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-}
-.ft-child-item {
-  position: relative;
-  padding: var(--conn-v) var(--conn-h) 0;
-  display: flex;
-  justify-content: center;
-}
-/* Horizontal line segment above each child */
-.ft-child-item::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--line-w);
-  background: var(--line);
-}
-.ft-child-item:first-child::before { left: 50%; }
-.ft-child-item:last-child::before  { right: 50%; }
-.ft-child-item:only-child::before  { display: none; }
-/* Vertical drop to child */
-.ft-child-item::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: var(--line-w);
-  height: var(--conn-v);
-  background: var(--line);
-}
-
-/* ── Member card ─────────────────────────────────────────── */
-.member-card {
-  width: 110px;
+/* Clean up React Flow's default node/attribution chrome to match
+   the flat editorial design. */
+.react-flow__attribution { display: none; }
+.react-flow__controls-button {
   background: var(--surface);
-  border-radius: var(--r-card);
-  box-shadow: var(--shadow-md);
-  padding: 14px 10px 12px;
+  border: 1px solid var(--border-hair);
+  color: var(--text-2);
+}
+.react-flow__controls-button:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+/* ── Member card — Family Atlas editorial canvas card ─────── */
+.member-card {
+  width: 142px;
+  background: var(--surface);
+  border: 1px solid var(--border-hair);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+  padding: 14px 12px 12px;
   text-align: center;
   cursor: pointer;
   user-select: none;
   position: relative;
-  transition: box-shadow 0.2s;
-  border-top: 3px solid transparent;
+  transition: box-shadow 0.2s, transform 0.2s, border-color 0.2s;
   flex-shrink: 0;
+}
+.member-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: #dbe4f0;
 }
 .member-card:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.member-card.male   { border-top-color: var(--male); }
-.member-card.female { border-top-color: var(--female); }
-.member-card.other  { border-top-color: var(--other); }
+/* Neutral avatar tint for all genders on canvas */
+.member-card .member-avatar { background: var(--avatar-tint-base); }
 
-/* Avatar circle */
+/* Deceased cards — muted palette */
+.member-card.deceased {
+  opacity: 0.78;
+  filter: saturate(0.55);
+}
+.member-card.deceased:hover {
+  opacity: 0.9;
+  filter: saturate(0.7);
+}
+.member-card.deceased .member-avatar { background: var(--avatar-tint-deceased); }
+
+/* Canvas edit-mode deceased nodes — same muted treatment */
+.canvas-node-deceased {
+  opacity: 0.78;
+  filter: saturate(0.55);
+}
+.canvas-node-deceased:hover {
+  opacity: 0.9;
+  filter: saturate(0.7);
+}
+
+/* Avatar circle — clean, neutral, editorial */
 .member-avatar {
-  width: 52px;
-  height: 52px;
+  width: 54px;
+  height: 54px;
   border-radius: 50%;
   margin: 0 auto 10px;
   overflow: hidden;
-  border: 3px solid var(--living);
-  background: #e2e8f0;
+  border: 1px solid var(--line);
+  background: var(--avatar-tint-base);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 800;
   color: var(--text-2);
   flex-shrink: 0;
   position: relative;
 }
-.member-avatar.is-deceased { border-color: var(--deceased); }
 .member-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-/* Living indicator dot */
-.living-dot {
-  position: absolute;
-  bottom: 2px;
-  right: 2px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--living);
-  border: 2px solid var(--surface);
-}
-.living-dot.deceased { background: var(--deceased); }
-
 .member-name {
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   font-weight: 700;
   color: var(--text-1);
-  line-height: 1.2;
-  margin-bottom: 2px;
+  line-height: 1.25;
+  margin-bottom: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .member-chinese {
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   color: var(--text-2);
-  margin-bottom: 2px;
+  margin-bottom: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .member-years {
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   color: var(--text-3);
 }
 
 /* Compact variant (for parents row) */
 .member-card.compact {
-  width: 90px;
-  padding: 10px 8px;
+  width: 120px;
+  padding: 11px 10px 10px;
   opacity: 0.85;
+  background: var(--surface);
+  border: 1px solid var(--border-hair);
+  border-radius: 14px;
 }
-.member-card.compact .member-avatar { width: 40px; height: 40px; font-size: 0.85rem; }
+.member-card.compact .member-avatar { width: 46px; height: 46px; margin-bottom: 8px; font-size: 0.85rem; }
+
+/* ── Canvas member node (ReactFlow edit mode) — matches read-only */
+.canvas-member-card {
+  width: 142px;
+  background: var(--surface);
+  border: 1px solid var(--border-hair);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+  padding: 14px 12px 12px;
+  text-align: center;
+  position: relative;
+  transition: box-shadow 0.2s, transform 0.2s, border-color 0.2s;
+}
+.canvas-member-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: #dbe4f0;
+}
+.canvas-avatar {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  margin: 0 auto 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--avatar-tint-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-2);
+  position: relative;
+  flex-shrink: 0;
+}
+.canvas-member-card.canvas-node-deceased .canvas-avatar { background: var(--avatar-tint-deceased); }
+.canvas-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.canvas-member-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-1);
+  line-height: 1.25;
+  margin-bottom: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.canvas-member-chinese {
+  font-size: 0.72rem;
+  color: var(--text-2);
+  margin-bottom: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.canvas-member-years {
+  font-size: 0.7rem;
+  color: var(--text-3);
+}
 
 /* ── Member detail panel ─────────────────────────────────── */
 .member-detail-overlay {
   position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.4);
-  z-index: 200;
+  top: 56px;              /* h-14 mobile header */
+  right: 0;
+  bottom: 0;
+  left: 0;
+  /* ponytail: transparent (no dimming) so the TreeControls / ActionPill /
+     tile cards stay clean white. The panel itself closes via the X. */
+  background: transparent;
+  pointer-events: none;
+  z-index: 40;
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: flex-end;
+}
+@media (min-width: 768px) {
+  .member-detail-overlay {
+    top: 64px;            /* h-16 desktop header */
+  }
+}
+.member-detail-overlay > * {
+  pointer-events: auto;
 }
 .member-detail-panel {
   width: 360px;
   max-width: 100vw;
   height: 100%;
   background: var(--surface);
-  box-shadow: -4px 0 32px rgba(0,0,0,0.15);
-  padding: 0;
+  border-left: 1px solid var(--border-hair);
+  box-shadow: -8px 0 32px rgba(0,0,0,0.10);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-}
-.detail-header {
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  text-align: center;
-  border-bottom: 1px solid #f1f5f9;
+  overflow: hidden;
   position: relative;
 }
-.detail-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: none;
-  background: #f1f5f9;
-  cursor: pointer;
-  font-size: 1.1rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-2);
-  transition: background 0.15s;
-}
-.detail-close:hover { background: #e2e8f0; }
-.detail-avatar {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  border: 4px solid var(--living);
-  background: #e2e8f0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--text-2);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-.detail-avatar.is-deceased { border-color: var(--deceased); }
-.detail-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.detail-name { font-size: 1.2rem; font-weight: 700; color: var(--text-1); }
-.detail-chinese { font-size: 0.95rem; color: var(--text-2); }
-.detail-badge {
+
+/* ── ActionPill (Phase C) — floating under the selected card, admin-only.
+   Single horizontal pill, items separated by hairline dividers.            */
+.action-pill {
+  position: fixed;
+  z-index: 60;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
-  border-radius: var(--r-pill);
-  font-size: 0.75rem;
-  font-weight: 600;
+  padding: 6px;
+  gap: 2px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid var(--border-hair);
+  box-shadow: var(--shadow-ft-md, 0 4px 20px rgba(0,0,0,0.09));
+  transform: translateX(-50%);
+  animation: pill-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-.badge-living  { background: #dcfce7; color: #166534; }
-.badge-deceased { background: #f1f5f9; color: var(--text-2); }
-.detail-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
-.detail-row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
+@keyframes pill-in {
+  from { opacity: 0; transform: translate(-50%, -6px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
 }
-.detail-row-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  min-width: 80px;
-  padding-top: 1px;
-}
-.detail-row-value {
-  font-size: 0.875rem;
-  color: var(--text-1);
-  flex: 1;
-}
-.detail-bio {
-  font-size: 0.875rem;
-  color: var(--text-2);
-  line-height: 1.6;
-}
-.detail-actions {
-  padding: 16px 24px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.btn-accent {
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  padding: 10px 16px;
-  border-radius: var(--r-btn);
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-  text-align: center;
-  transition: background 0.15s;
-}
-.btn-accent:hover { background: var(--accent-hover); }
-.btn-ghost {
+.action-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 0;
   background: transparent;
   color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s ease, color .15s ease;
+}
+.action-pill-btn:hover { background: var(--accent-light); color: var(--accent); }
+.action-pill-btn:active { transform: scale(0.97); }
+.action-pill-btn.danger { color: var(--status-divorced, #e11d48); }
+.action-pill-btn.danger:hover { background: #fff1f2; color: #b91c40; }
+.action-pill-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border-hair);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: transparent;
+}
+.status-pill-married  { color: var(--status-married,  #059669); background: #ecfdf5; }
+.status-pill-divorced { color: var(--status-divorced,#e11d48); background: #fef2f2; }
+.status-pill-other    { color: #475569; background: #f1f5f9; }
+
+
+.btn-accent { background: var(--accent); color: #fff; border: none; padding: 10px 16px; border-radius: var(--r-btn); font-size: 0.875rem; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.15s; }
+.btn-accent:hover { background: var(--accent-hover); }
+.btn-accent:active { transform: scale(0.97); }
+.btn-ghost { background: transparent; color: var(--text-2); border: 1.5px solid #e2e8f0; padding: 10px 16px; border-radius: var(--r-btn); font-size: 0.875rem; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.15s; }
+.btn-ghost:hover { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+.btn-ghost:active { transform: scale(0.97); }
+
+/* ── RelTypeModal ────────────────────────────────────────
+   ponytail: glass + accent-tinted buttons. Reuses existing tokens
+   (--accent, --accent-light, --accent-hover, --glass) so it stays
+   inside the design system without new variables. */
+.rtm-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+  animation: fade-in var(--t-fast) var(--ease-out) both;
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.rtm-shell {
+  background: var(--glass);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  padding: 24px;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  box-shadow: var(--shadow-md);
+  animation: modal-pop-in var(--t-base) var(--ease-out) both;
+}
+@keyframes modal-pop-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.rtm-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-1);
+  margin-bottom: 18px;
+  line-height: 1.3;
+}
+.rtm-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+.rtm-type-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.rtm-type-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
   border: 1.5px solid #e2e8f0;
-  padding: 10px 16px;
-  border-radius: var(--r-btn);
-  font-size: 0.875rem;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
-  text-align: center;
-  transition: all 0.15s;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: all var(--t-fast);
 }
-.btn-ghost:hover { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+.rtm-type-btn:hover { border-color: var(--accent); color: var(--accent); }
+.rtm-type-btn:active { transform: scale(0.94); }
+.rtm-type-btn.active {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.rtm-slot-card {
+  padding: 12px 14px;
+  background: rgba(255,255,255,0.6);
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  margin-bottom: 16px;
+  display: flex; align-items: center; gap: 10px;
+}
+.rtm-slot-col { flex: 1; min-width: 0; }
+.rtm-slot-col.right { text-align: right; }
+.rtm-slot-tag {
+  font-size: 0.7rem;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.rtm-slot-name {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rtm-swap {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1.5px solid #e2e8f0;
+  background: var(--surface);
+  color: var(--text-2);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--t-fast);
+}
+.rtm-swap:hover { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+.rtm-swap:active { transform: scale(0.92); }
+.rtm-spouse-card {
+  margin-bottom: 18px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.6);
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+}
+.rtm-spouse-card label {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; margin-bottom: 4px;
+  font-size: 0.82rem; color: var(--text-1);
+}
+.rtm-actions { display: flex; gap: 10px; }
+.rtm-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--t-fast);
+}
+.rtm-btn:disabled { cursor: wait; opacity: 0.7; }
+.rtm-btn-primary { background: var(--accent); color: #fff; }
+.rtm-btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.rtm-btn-primary:active:not(:disabled) { transform: scale(0.97); }
+.rtm-btn-ghost {
+  background: var(--surface);
+  color: var(--text-2);
+  border: 1.5px solid #e2e8f0;
+}
+.rtm-btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+.rtm-btn-ghost:active { transform: scale(0.97); }
+.rtm-btn-danger {
+  flex: 0 0 auto;
+  padding: 10px 16px;
+  background: var(--surface);
+  color: #ef4444;
+  border: 1.5px solid #ef4444;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--t-fast);
+}
+.rtm-btn-danger:hover { background: #fef2f2; }
+.rtm-btn-danger:active { transform: scale(0.97); }
 
 /* ── No member selected state ────────────────────────────── */
 .tree-empty {
@@ -827,5 +838,65 @@ body {
 .tree-empty h2 { font-size: 1.2rem; font-weight: 700; color: var(--text-2); }
 .tree-empty p  { font-size: 0.9rem; }
 
+/* ── Card entrance animation ─────────────────────────────────
+   ponytail: fade + slide-up on first paint. Uses transform + opacity
+   only (GPU composited, won't fight ReactFlow or pan/zoom).
+   Stagger via --enter-delay set inline by the parent. */
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.card-enter {
+  animation: card-enter var(--t-base) var(--ease-out) both;
+  animation-delay: var(--enter-delay, 0ms);
+}
+
+/* ── Selected member — hairline ring + accented avatar ──── */
+.member-card.selected {
+  border: 2px solid var(--selected-ring);
+  box-shadow: none;
+}
+.member-card.selected .member-avatar {
+  background: var(--avatar-selected);
+  color: var(--accent);
+}
+
 /* ── Utility ─────────────────────────────────────────────── */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+
+/* ── Button Shimmer ──────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.btn-shimmer {
+  background-size: 200% 100%;
+  background-image: linear-gradient(
+    110deg,
+    transparent 33%,
+    rgba(255,255,255,0.18) 50%,
+    transparent 67%
+  );
+  animation: shimmer 3s ease-in-out infinite;
+}
+.btn-shimmer:disabled { animation: none; }
+
+/* ── Toast Notifications ──────────────────────────────────── */
+.toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column-reverse; gap: 10px; pointer-events: none; }
+.toast { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-radius: 10px; font-size: 0.875rem; font-weight: 600; color: #fff; cursor: pointer; pointer-events: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.18); animation: toast-in 0.35s ease-out forwards; }
+.toast-success { background: #22c55e; }
+.toast-error   { background: #ef4444; }
+.toast-info    { background: var(--accent); }
+.toast-icon { font-size: 1rem; flex-shrink: 0; }
+.toast-msg { flex: 1; }
+
+@keyframes toast-in {
+  0%   { opacity: 0; transform: translateY(16px) scale(0.95); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.toast:active { transform: scale(0.97); }
+
+@media (max-width: 640px) {
+  .toast-container { left: 12px; right: 12px; bottom: 80px; }
+  .toast { width: 100%; }
+}

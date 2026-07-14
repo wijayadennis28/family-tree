@@ -7,18 +7,20 @@ use App\Http\Controllers\API\{
     UserController,
     FamilyMemberController,
     RelationshipController,
+    FamilyController,
     BranchController,
-    FamilyMemberBranchController,
+
     EventController,
     EventMemberController,
     AuditLogController,
     PhotoGalleryController,
     PhotoController,
-    UserBranchAccessController,
+
     StatsController,
     NotificationController,
     InvitationController,
-    TreeController
+    TreeController,
+    AbilitiesController
 };
 
 // -------------------------------------------------------
@@ -39,34 +41,31 @@ Route::middleware('auth:sanctum')->group(function () {
     // Auth
     Route::post('/auth/logout',  [AuthController::class, 'logout']);
     Route::get('/auth/profile',  [AuthController::class, 'profile']);
+    Route::put('/auth/profile',  [AuthController::class, 'updateProfile']);
 
     // ── Family Tree (read: all authenticated users) ──────────────
     Route::get('/tree/{memberId}',             [TreeController::class, 'show']);
     Route::get('/tree/{memberId}/ancestors',   [TreeController::class, 'ancestors']);
     Route::get('/tree/{memberId}/descendants', [TreeController::class, 'descendants']);
 
-    // ── Family Members (read: all; write: admins only) ───────────
+    // ── Family Members (read: all; write: ability-gated) ────────
     Route::get('/members',          [FamilyMemberController::class, 'index']);
     Route::get('/members/{id}',     [FamilyMemberController::class, 'show']);
     Route::get('/members/{id}/relationships', [FamilyMemberController::class, 'relationships']);
 
-    Route::middleware('role:Super Admin,Family Admin')->group(function () {
-        Route::post('/members',                                          [FamilyMemberController::class, 'store']);
-        Route::put('/members/{id}',                                      [FamilyMemberController::class, 'update']);
-        Route::delete('/members/{id}',                                   [FamilyMemberController::class, 'destroy']);
-        Route::post('/members/{id}/relationships',                       [FamilyMemberController::class, 'attachRelationship']);
-        Route::delete('/members/{id}/relationships/{relationshipId}',    [FamilyMemberController::class, 'detachRelationship']);
-    });
+    Route::middleware('ability:add_member')->post('/members', [FamilyMemberController::class, 'store']);
+    Route::middleware('ability:edit_member')->put('/members/{id}', [FamilyMemberController::class, 'update']);
+    Route::middleware('ability:delete_member')->delete('/members/{id}', [FamilyMemberController::class, 'destroy']);
+    Route::middleware('ability:manage_relationships')->post('/members/{id}/relationships', [FamilyMemberController::class, 'attachRelationship']);
+    Route::middleware('ability:manage_relationships')->delete('/members/{id}/relationships/{relationshipId}', [FamilyMemberController::class, 'detachRelationship']);
 
-    // ── Relationships (read: all; write: admins only) ─────────────
+    // ── Relationships (read: all; write: ability-gated) ───────
     Route::get('/relationships',      [RelationshipController::class, 'index']);
     Route::get('/relationships/{id}', [RelationshipController::class, 'show']);
 
-    Route::middleware('role:Super Admin,Family Admin')->group(function () {
-        Route::post('/relationships',       [RelationshipController::class, 'store']);
-        Route::put('/relationships/{id}',   [RelationshipController::class, 'update']);
-        Route::delete('/relationships/{id}',[RelationshipController::class, 'destroy']);
-    });
+    Route::middleware('ability:manage_relationships')->post('/relationships', [RelationshipController::class, 'store']);
+    Route::middleware('ability:manage_relationships')->put('/relationships/{id}', [RelationshipController::class, 'update']);
+    Route::middleware('ability:manage_relationships')->delete('/relationships/{id}', [RelationshipController::class, 'destroy']);
 
     // ── Users (Super Admin only) ──────────────────────────────────
     Route::middleware('role:Super Admin')->group(function () {
@@ -88,97 +87,39 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     Route::put('/invitations/{token}/accept', [InvitationController::class, 'accept']);
 
-    // ── Branches ──────────────────────────────────────────────────
+    // ── Families ──────────────────────────────────────────────────
+    Route::get('/families', [FamilyController::class, 'index']);
+    Route::get('/families/{id}/tree', [TreeController::class, 'familyTree']);
+    Route::post('/families', [FamilyController::class, 'store']);
+    Route::get('/families/{id}', [FamilyController::class, 'show']);
+    Route::get('/families/{id}/branch-tree', [FamilyController::class, 'branchTree']);
+    Route::put('/families/{id}', [FamilyController::class, 'update'])->middleware('ability:edit_family');
+    Route::delete('/families/{id}', [FamilyController::class, 'destroy'])->middleware('ability:delete_family');
+
+    // ── Branches (within a family) ──────────────────────────────────
     Route::get('/branches', [BranchController::class, 'index']);
-    Route::middleware('role:Super Admin,Family Admin')->group(function () {
-        Route::post('/branches',       [BranchController::class, 'store']);
-        Route::put('/branches/{id}',   [BranchController::class, 'update']);
-        Route::delete('/branches/{id}',[BranchController::class, 'destroy']);
+    Route::post('/branches', [BranchController::class, 'store'])->middleware('ability:manage_branches');
+    Route::get('/branches/{id}', [BranchController::class, 'show']);
+    Route::put('/branches/{id}', [BranchController::class, 'update'])->middleware('ability:edit_branch');
+    Route::delete('/branches/{id}', [BranchController::class, 'destroy'])->middleware('ability:delete_branch');
+
+    // ── Abilities Matrix (Super Admin only) ───────────────────────
+    Route::middleware('role:Super Admin')->group(function () {
+        Route::get('/abilities', [AbilitiesController::class, 'index']);
+        Route::put('/abilities', [AbilitiesController::class, 'update']);
     });
+    Route::middleware('role:Super Admin')->get('/abilities/{familyId}', [AbilitiesController::class, 'forFamily']);
 
-    // ── Events ────────────────────────────────────────────────────
-    Route::apiResource('events', EventController::class);
+    // ── Events (stub — locked to Super Admin until implemented) ───
+    Route::middleware('role:Super Admin')->apiResource('events', EventController::class);
 
-    // ── Photo Galleries & Photos ──────────────────────────────────
-    Route::apiResource('galleries', PhotoGalleryController::class);
-    Route::apiResource('photos',    PhotoController::class);
-    Route::get('/photos/{memberId}', [PhotoController::class, 'byMember']);
+    // ── Photo Galleries & Photos (stub — locked to Super Admin until implemented) ───
+    Route::middleware('role:Super Admin')->apiResource('galleries', PhotoGalleryController::class);
+    Route::middleware('role:Super Admin')->apiResource('photos',    PhotoController::class);
+    Route::middleware('role:Super Admin')->get('/photos/{memberId}', [PhotoController::class, 'byMember']);
 
     // ── Audit Logs (admins only) ──────────────────────────────────
     Route::middleware('role:Super Admin,Family Admin')->group(function () {
         Route::apiResource('logs', AuditLogController::class);
     });
 });
-
-
-/*
-|--------------------------------------------------------------------------
-| API Routes
-|--------------------------------------------------------------------------
-|
-| Here is where you can register API routes for your application. These
-| routes are loaded by the RouteServiceProvider and all of them will
-| be assigned to the "api" middleware group. Make something great!
-|
-*/
-
-// Sanctum authentication routes (you may already have these via Laravel Breeze/Jetstream)
-Route::post('/auth/register', [AuthController::class, 'register']);
-Route::post('/auth/login', [AuthController::class, 'login']);
-Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
-Route::get('/auth/profile', [AuthController::class, 'profile'])->middleware('auth:sanctum');
-
-// Users
-Route::apiResource('users', UserController::class)->middleware('auth:sanctum');
-
-// Family Members
-Route::apiResource('members', FamilyMemberController::class)->middleware('auth:sanctum');
-Route::get('members/{id}/relationships', [FamilyMemberController::class, 'relationships'])
-        ->middleware('auth:sanctum');
-Route::post('members/{id}/relationships', [FamilyMemberController::class, 'attachRelationship'])
-        ->middleware('auth:sanctum');
-Route::delete('members/{id}/relationships/{relationshipId}', [FamilyMemberController::class, 'detachRelationship'])
-        ->middleware('auth:sanctum');
-
-// Relationships (stand‑alone)
-Route::apiResource('relationships', RelationshipController::class)->middleware('auth:sanctum');
-
-// Branches
-Route::apiResource('branches', BranchController::class)->middleware('auth:sanctum');
-
-// Family Member Branches (pivot)
-Route::apiResource('member-branches', FamilyMemberBranchController::class)->middleware('auth:sanctum');
-
-// Events
-Route::apiResource('events', EventController::class)->middleware('auth:sanctum');
-
-// Event Members (pivot)
-Route::apiResource('event-members', EventMemberController::class)->middleware('auth:sanctum');
-
-// Audit Logs
-Route::apiResource('logs', AuditLogController::class)->middleware('auth:sanctum');
-
-// Photo Galleries
-Route::apiResource('galleries', PhotoGalleryController::class)->middleware('auth:sanctum');
-
-// Photos
-Route::apiResource('photos', PhotoController::class)->middleware('auth:sanctum');
-Route::get('photos/{memberId}', [PhotoController::class, 'byMember'])->middleware('auth:sanctum');
-
-// User Branch Access (pivot)
-Route::apiResource('user-branches', UserBranchAccessController::class)->middleware('auth:sanctum');
-
-
-// Statistics
-Route::get('/stats', [StatsController::class, 'index'])->middleware('auth:sanctum');
-Route::get('/stats/generations', [StatsController::class, 'generations'])->middleware('auth:sanctum');
-Route::get('/stats/branches', [StatsController::class, 'branches'])->middleware('auth:sanctum');
-
-// Notifications
-Route::get('/notifications', [NotificationController::class, 'index'])->middleware('auth:sanctum');
-Route::post('/notifications/read', [NotificationController::class, 'markAsRead'])->middleware('auth:sanctum');
-
-// Invitations
-Route::post('/invitations', [InvitationController::class, 'store'])->middleware('auth:sanctum');
-Route::get('/invitations/{token}', [InvitationController::class, 'show']);
-Route::put('/invitations/{token}/accept', [InvitationController::class, 'accept'])->middleware('auth:sanctum');

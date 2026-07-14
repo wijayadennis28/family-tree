@@ -1,20 +1,30 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useContext } from 'react';
 import { Link } from 'react-router-dom';
-import { gsap } from 'gsap';
+import { Users, MapPin, Plus, IdentificationCard } from '@phosphor-icons/react';
+import { animateMemberCards } from '../../utils/gsapUtils';
 import { useApi } from '../../hooks/useApi';
+import { STORAGE_URL } from '../../utils/storageUrl';
+import { AuthContext } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 
 export default function MemberList() {
+  const { hasAbility, activeFamily } = useContext(AuthContext);
+  const { t } = useLanguage();
   const api      = useApi();
-  const pageRef  = useRef(null);
+  const gridRef  = useRef(null);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search,  setSearch]  = useState('');
   const [filter,  setFilter]  = useState('all');
   const [error,   setError]   = useState(null);
 
+  // Page-level fade-in is now handled by the global PageTransition wrapper.
+
   useEffect(() => {
-    gsap.fromTo(pageRef.current, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.35, ease: 'power2.out' });
-  }, []);
+    if (!loading && members.length > 0) {
+      animateMemberCards(gridRef.current);
+    }
+  }, [members]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const load = async () => {
@@ -23,101 +33,154 @@ export default function MemberList() {
       if (search) params.set('search', search);
       if (filter === 'living')   params.set('living', 'true');
       if (filter === 'deceased') params.set('living', 'false');
+      params.set('family_id', activeFamily?.id ?? '');
       const [data, err] = await api.get(`/members?${params}`);
-      if (err) setError(typeof err === 'string' ? err : 'Could not load members.');
+      if (err) setError(typeof err === 'string' ? err : 'Could not load people.');
       else setMembers(data);
       setLoading(false);
     };
-    const t = setTimeout(load, 300); // debounce search
-    return () => clearTimeout(t);
+    const timer = setTimeout(load, 300); // debounce search
+    return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, filter]);
-
-  const genderColor = { Male: 'var(--male)', Female: 'var(--female)', Other: 'var(--other)' };
+  }, [search, filter, activeFamily]);
 
   return (
-    <div ref={pageRef} style={{ padding: '32px 32px 40px', maxWidth: 1000, margin: '0 auto' }}>
+    <div className="p-8 pb-10 max-w-5xl mx-auto">
       {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-1)' }}>Family Members</h1>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-3)', marginTop: 2 }}>{members.length} people</p>
-        </div>
-        <Link to="/members/new" className="btn-primary" style={{ textDecoration: 'none', padding: '10px 20px', borderRadius: 8, background: 'var(--accent)', color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>
-          + Add Member
-        </Link>
+      <div className="mb-8">
+        <h1 className="text-2xl font-extrabold text-ft-text-1 tracking-tight">{t('people.title')}</h1>
+        <p className="text-sm text-ft-text-3 mt-1">
+          {loading ? t('common.loading') : `${members.length} ${t('people.memberCountLabel')} in the atlas`}
+        </p>
       </div>
 
       {/* Search + filter bar */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <input
-          type="text" placeholder="Search by name…" value={search}
+          type="text" placeholder={t('people.searchPlaceholder')} value={search}
           onChange={e => setSearch(e.target.value)}
-          style={{ flex: 1, padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: '0.9rem', outline: 'none' }}
+          className="flex-1 px-3.5 py-2.5 border-[1.5px] border-slate-200 rounded-lg text-sm outline-none transition-all duration-200 focus:border-ft-accent focus:ring-[3px] focus:ring-ft-accent/15 focus:bg-white bg-white text-ft-text-1 placeholder:text-ft-text-3"
         />
-        {['all','living','deceased'].map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            style={{ padding: '10px 16px', borderRadius: 8, border: '1.5px solid #e2e8f0', background: filter === f ? 'var(--accent)' : 'var(--surface)', color: filter === f ? '#fff' : 'var(--text-2)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', textTransform: 'capitalize' }}>
-            {f}
-          </button>
-        ))}
+        <div className="flex gap-2">
+          {[
+            { key: 'all', label: t('common.all') },
+            { key: 'living', label: t('stats.living') },
+            { key: 'deceased', label: t('stats.deceased') },
+          ].map(({ key, label }) => (
+            <button key={key} onClick={() => setFilter(key)}
+              className={`px-4 py-2.5 rounded-lg border-[1.5px] font-semibold text-xs cursor-pointer transition-all duration-200 active:scale-[0.97] ${
+                filter === key
+                  ? 'bg-ft-accent text-white border-ft-accent shadow-ft-sm'
+                  : 'bg-ft-surface text-ft-text-2 border-slate-200 hover:bg-ft-accent-light hover:text-ft-accent hover:border-ft-accent'
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {hasAbility('add_member', activeFamily?.id) && (
+          <Link to="/people/new" className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-ft-accent text-white no-underline font-bold text-sm hover:bg-ft-accent-hover active:scale-[0.98] transition-all duration-150 shadow-ft-sm btn-shimmer shrink-0">
+            <Plus /> {t('people.addMember')}
+          </Link>
+        )}
       </div>
 
       {/* Error */}
-      {error && <div className="alert alert-danger">{error}</div>}
+      {error && <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-3 text-sm mb-5">{error}</div>}
 
-      {/* Loading */}
+      {/* Loading skeletons */}
       {loading && (
-        <div className="ft-loading" style={{ height: '40vh' }}>
-          <div className="ft-loading-spinner" />
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="bg-white border border-slate-200 rounded-2xl p-5 h-40 animate-pulse">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-full bg-slate-200" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-slate-200 rounded w-3/4" />
+                  <div className="h-3 bg-slate-200 rounded w-1/2" />
+                </div>
+              </div>
+              <div className="space-y-2 mb-4">
+                <div className="h-3 bg-slate-200 rounded w-full" />
+                <div className="h-3 bg-slate-200 rounded w-2/3" />
+              </div>
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <div className="h-8 bg-slate-200 rounded flex-1" />
+                <div className="h-8 bg-slate-200 rounded flex-1" />
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
       {/* Empty */}
       {!loading && !error && members.length === 0 && (
-        <div className="tree-empty" style={{ height: '40vh' }}>
-          <div className="tree-empty-icon">👥</div>
-          <h2>No members yet</h2>
-          <p>Click <strong>+ Add Member</strong> to add your first family member.</p>
+        <div className="flex flex-col items-center justify-center py-20 text-center bg-white border border-dashed border-slate-300 rounded-2xl">
+          <div className="w-16 h-16 rounded-2xl bg-ft-accent-light text-ft-accent flex items-center justify-center text-2xl mb-4">
+            <Users />
+          </div>
+          <h2 className="text-xl font-bold text-ft-text-1 mb-1">{t('people.noMembers')}</h2>
+          <p className="text-sm text-ft-text-3 mb-6 max-w-md">
+            {search
+              ? t('people.noSearchResults', `No results for "${search}".`)
+              : activeFamily
+                ? t('people.emptyFamilyHint', `${activeFamily.name} doesn't have any members yet.`)
+                : t('people.selectFamilyHint')}
+          </p>
+          {hasAbility('add_member', activeFamily?.id) && (
+            <Link
+              to="/people/new"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-ft-accent text-white font-bold text-sm hover:bg-ft-accent-hover transition-colors"
+            >
+              <Plus /> {t('people.addMember')}
+            </Link>
+          )}
         </div>
       )}
 
-      {/* Member grid */}
+      {/* People grid */}
       {!loading && members.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+        <div ref={gridRef} className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
           {members.map(m => {
             const isDeceased = !!m.dod;
             const initials = m.name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
             return (
-              <div key={m.id} style={{ background: 'var(--surface)', borderRadius: 14, boxShadow: 'var(--shadow-sm)', padding: '20px', borderTop: `3px solid ${genderColor[m.gender] || 'var(--accent)'}`, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div key={m.id}
+                className="group bg-white border border-slate-200 rounded-2xl p-5 flex flex-col gap-3 h-full transition-all duration-200 hover:shadow-ft-md hover:-translate-y-0.5 hover:border-ft-accent/30"
+              >
                 {/* Avatar + name */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 48, height: 48, borderRadius: '50%', background: isDeceased ? '#e2e8f0' : 'var(--accent-light)', border: `3px solid ${isDeceased ? 'var(--deceased)' : 'var(--living)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '1rem', color: isDeceased ? 'var(--text-3)' : 'var(--accent)', flexShrink: 0 }}>
-                    {m.photo ? <img src={m.photo} alt={m.name} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} /> : initials}
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 text-base font-bold border-2 ${
+                    isDeceased ? 'bg-slate-100 text-ft-text-3 border-slate-200' : 'bg-ft-accent-light text-ft-accent border-ft-accent/20'
+                  }`}>
+                    {m.photo ? <img src={`${STORAGE_URL}/${m.photo}`} alt={m.name} className="w-full h-full rounded-full object-cover" /> : initials}
                   </div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-1)' }}>{m.name}</div>
-                    {m.chinese_name && <div style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>{m.chinese_name}</div>}
+                  <div className="min-w-0">
+                    <div className="font-bold text-sm text-ft-text-1 truncate">{m.name}</div>
+                    {m.chinese_name && <div className="text-xs text-ft-text-2 truncate">{m.chinese_name}</div>}
                   </div>
-                  <span style={{ marginLeft: 'auto', fontSize: '0.7rem', padding: '3px 8px', borderRadius: 999, background: isDeceased ? '#f1f5f9' : '#dcfce7', color: isDeceased ? 'var(--text-3)' : '#166534', fontWeight: 600 }}>
-                    {isDeceased ? 'Deceased' : 'Living'}
+                  <span className={`ml-auto text-[0.7rem] py-0.5 px-2 rounded-full font-semibold shrink-0 ${
+                    isDeceased ? 'bg-slate-100 text-ft-text-3' : 'bg-green-50 text-green-700'
+                  }`}>
+                    {isDeceased ? t('stats.deceased') : t('stats.living')}
                   </span>
                 </div>
 
                 {/* Details */}
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-2)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <div className="text-xs text-ft-text-2 flex flex-col gap-0.5">
                   <span>{m.gender} {m.dob ? `· b. ${m.dob.slice(0,4)}` : ''} {m.dod ? `· d. ${m.dod.slice(0,4)}` : ''}</span>
-                  {m.place_of_birth && <span>📍 {m.place_of_birth}</span>}
+                  {m.place_of_birth && <span className="flex items-center gap-1"><MapPin /> {m.place_of_birth}</span>}
                 </div>
 
                 {/* Actions */}
-                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                  <Link to={`/tree/${m.id}`} style={{ flex: 1, textAlign: 'center', padding: '7px', borderRadius: 7, background: 'var(--accent-light)', color: 'var(--accent)', textDecoration: 'none', fontWeight: 600, fontSize: '0.8rem' }}>
-                    🌳 Tree
+                <div className="flex gap-2 mt-auto pt-2 border-t border-slate-100">
+                  <Link to={`/people/${m.id}`} className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md bg-ft-accent text-white no-underline font-semibold text-xs hover:bg-ft-accent-hover active:scale-[0.97] transition-all duration-150">
+                    <IdentificationCard /> {t('common.profile')}
                   </Link>
-                  <Link to={`/members/${m.id}/edit`} style={{ flex: 1, textAlign: 'center', padding: '7px', borderRadius: 7, border: '1.5px solid #e2e8f0', color: 'var(--text-2)', textDecoration: 'none', fontWeight: 600, fontSize: '0.8rem' }}>
-                    Edit
-                  </Link>
+                  {hasAbility('edit_member', activeFamily?.id) && (
+                    <Link to={`/people/${m.id}/edit`} className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md border border-slate-200 text-ft-text-2 no-underline font-semibold text-xs hover:bg-ft-accent-light hover:text-ft-accent hover:border-ft-accent active:scale-[0.97] transition-all duration-150">
+                      {t('common.edit')}
+                    </Link>
+                  )}
                 </div>
               </div>
             );

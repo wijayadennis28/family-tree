@@ -1,41 +1,136 @@
 import { NavLink } from 'react-router-dom';
 import { useContext } from 'react';
 import { AuthContext } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
+import {
+  Users,
+  Gear,
+  UsersFour,
+  UserGear,
+  Shield,
+  LockKey,
+} from '@phosphor-icons/react';
 
-const nav = [
-  { to: '/',              label: 'Dashboard',      icon: '📊', end: true },
-  { to: '/members',       label: 'Members',        icon: '👥' },
-  { to: '/events',        label: 'Events',         icon: '📅' },
-  { to: '/gallery',       label: 'Gallery',        icon: '🖼️' },
-  { to: '/notifications', label: 'Notifications',  icon: '🔔' },
-  { to: '/stats',         label: 'Statistics',     icon: '📈' },
+const mainNav = [
+  { to: '/people',         labelKey: 'sidebar.people',   icon: <Users /> },
+  { to: '/families',       labelKey: 'sidebar.families', icon: <UsersFour /> },
 ];
+
+const settingsNav = { to: '/settings', labelKey: 'sidebar.settings', icon: <Gear /> };
 
 const adminNav = [
-  { to: '/admin/users',       label: 'Users',       icon: '🔑' },
-  { to: '/admin/invitations', label: 'Invitations', icon: '✉️' },
-  { to: '/admin/audit',       label: 'Audit Log',   icon: '📋' },
+  { to: '/admin/users',     labelKey: 'sidebar.users',     icon: <UserGear /> },
+  { to: '/admin/roles',     labelKey: 'sidebar.roles',     icon: <Shield /> },
+  { to: '/admin/abilities', labelKey: 'sidebar.abilities', icon: <LockKey /> },
 ];
 
+function SidebarItem({ to, labelKey, icon, end }) {
+  const { t } = useLanguage();
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        `group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold border transition-all duration-200 ${
+          isActive
+            ? 'text-ft-accent bg-ft-rail-active border-ft-rail-active-border shadow-sm'
+            : 'text-ft-text-3 border-transparent hover:text-ft-text-2 hover:bg-ft-surface-2'
+        }`
+      }
+      title={t(labelKey)}
+    >
+      <span className="text-lg leading-none transition-transform duration-200 group-hover:scale-110">{icon}</span>
+      <span className="truncate">{t(labelKey)}</span>
+    </NavLink>
+  );
+}
+
+function SectionLabel({ children }) {
+  return (
+    <div className="px-3 pt-4 pb-1.5 text-[0.65rem] font-bold uppercase tracking-wider text-ft-text-3/80">
+      {children}
+    </div>
+  );
+}
+
 export default function Sidebar() {
-  const { user } = useContext(AuthContext);
-  const isAdmin = user?.role === 'Super Admin' || user?.role === 'Family Admin';
+  const { isAdmin, user } = useContext(AuthContext);
+  const isSuperAdmin = user?.role === 'Super Admin';
+  const { t } = useLanguage();
 
   return (
-    <aside className="app-sidebar">
-      <div className="sidebar-label">Navigation</div>
-      {nav.map(({ to, label, icon, end }) => (
-        <NavLink key={to} to={to} end={end}>{icon} {label}</NavLink>
-      ))}
-
-      {isAdmin && (
-        <>
-          <div className="sidebar-label" style={{ marginTop: 12 }}>Admin</div>
-          {adminNav.map(({ to, label, icon }) => (
-            <NavLink key={to} to={to}>{icon} {label}</NavLink>
+    <>
+      {/* Desktop sidebar — 220px white rail with icon + text */}
+      <aside className="hidden md:flex flex-col w-[220px] self-stretch bg-white border-r border-ft-border-hair py-5 px-3 shrink-0">
+        {/* Main navigation */}
+        <div className="flex flex-col gap-1">
+          <SectionLabel>{t('sidebar.main')}</SectionLabel>
+          {mainNav.map(item => (
+            <SidebarItem key={item.to} {...item} />
           ))}
-        </>
-      )}
-    </aside>
+        </div>
+
+        {/* Settings */}
+        <div className="flex flex-col gap-1 mt-2">
+          <SectionLabel>{t('sidebar.preferences')}</SectionLabel>
+          <SidebarItem {...settingsNav} />
+        </div>
+
+        {/* Admin section */}
+        {isAdmin && (
+          <div className="flex flex-col gap-1 mt-2 pt-4 border-t border-ft-border-hair">
+            <SectionLabel>{t('sidebar.admin')}</SectionLabel>
+            {adminNav.map(item => {
+              if (item.to === '/admin/users' && !isSuperAdmin) return null;
+              return <SidebarItem key={item.to} {...item} />;
+            })}
+          </div>
+        )}
+      </aside>
+
+      {/* Mobile bottom nav */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-ft-border-hair z-40 flex items-center px-1 pb-1">
+        {mainNav.map(({ to, labelKey, icon, end }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            className={({ isActive }) =>
+              `flex flex-col items-center gap-0.5 py-1.5 flex-1 min-w-0 relative ${
+                isActive ? 'text-ft-accent' : 'text-ft-text-3'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <span className="text-xl leading-none">{icon}</span>
+                <span className="text-[0.6rem] font-medium truncate w-full text-center">{t(labelKey)}</span>
+                {isActive && (
+                  <span className="absolute -top-1 w-1.5 h-1.5 rounded-full bg-ft-accent" />
+                )}
+              </>
+            )}
+          </NavLink>
+        ))}
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            `flex flex-col items-center gap-0.5 py-1.5 flex-1 min-w-0 relative ${
+              isActive ? 'text-ft-accent' : 'text-ft-text-3'
+            }`
+          }
+        >
+          {({ isActive }) => (
+            <>
+              <Gear className="text-xl" />
+              <span className="text-[0.6rem] font-medium truncate w-full text-center">{t('sidebar.settings')}</span>
+              {isActive && (
+                <span className="absolute -top-1 w-1.5 h-1.5 rounded-full bg-ft-accent" />
+              )}
+            </>
+          )}
+        </NavLink>
+      </nav>
+    </>
   );
 }

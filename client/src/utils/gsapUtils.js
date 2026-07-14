@@ -42,6 +42,30 @@ export const revealPage = (el) => {
   gsap.fromTo(el, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out' });
 };
 
+/** Staggered entrance for member cards (list/grid view) */
+export const animateMemberCards = (containerEl) => {
+  if (!containerEl) return;
+  const cards = containerEl.querySelectorAll('.member-card-item');
+  if (cards.length === 0) return;
+
+  gsap.killTweensOf(cards);
+  cards.forEach(c => { c.style.transition = 'none'; });
+
+  gsap.fromTo(
+    cards,
+    { opacity: 0, y: 20, scale: 0.95 },
+    {
+      opacity: 1, y: 0, scale: 1,
+      duration: 0.35,
+      stagger: { amount: 0.3, from: 'start' },
+      ease: 'power2.out',
+      onComplete: () => {
+        gsap.set(cards, { clearProps: 'transform,opacity,transition' });
+      },
+    }
+  );
+};
+
 /** Simple expand/collapse (legacy - kept for compatibility) */
 export const toggleNode = (element, isOpen) => {
   if (!element) return;

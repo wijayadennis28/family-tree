@@ -1,7 +1,9 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import { useLanguage } from '../../context/LanguageContext';
 
 const Button = ({ children, type = 'button', loading = false, className = '', onClick }) => {
+  const { t } = useLanguage();
   return (
     <button
       type={type}
@@ -9,7 +11,7 @@ const Button = ({ children, type = 'button', loading = false, className = '', on
       disabled={loading}
       onClick={onClick}
     >
-      {loading ? 'Loading...' : children}
+      {loading ? t('button.loading') : children}
     </button>
   );
 };
