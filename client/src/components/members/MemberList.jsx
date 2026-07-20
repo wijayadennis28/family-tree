@@ -1,14 +1,17 @@
-import { useEffect, useState, useRef, useContext } from 'react';
+import { useEffect, useState, useRef, useContext, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, MapPin, Plus, IdentificationCard } from '@phosphor-icons/react';
+import { Users, MapPin, Plus, IdentificationCard, CaretDown, House } from '@phosphor-icons/react';
 import { animateMemberCards } from '../../utils/gsapUtils';
 import { useApi } from '../../hooks/useApi';
 import { STORAGE_URL } from '../../utils/storageUrl';
+import { getLivingStatus } from '../../utils/livingStatus';
+import { getMemberInitials } from '../../utils/initials';
+import { buildMemberUrl } from '../../utils/treeUrl';
 import { AuthContext } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 
 export default function MemberList() {
-  const { hasAbility, activeFamily } = useContext(AuthContext);
+  const { hasAbility, activeFamily, setActiveFamily, familyRoles } = useContext(AuthContext);
   const { t } = useLanguage();
   const api      = useApi();
   const gridRef  = useRef(null);
@@ -19,6 +22,19 @@ export default function MemberList() {
   const [error,   setError]   = useState(null);
 
   // Page-level fade-in is now handled by the global PageTransition wrapper.
+
+  const familyOptions = useMemo(() => [
+    { id: '', name: t('people.allFamilies') },
+    ...familyRoles.map(r => ({ id: String(r.familyId), name: r.familyName })),
+  ], [familyRoles, t]);
+
+  const handleFamilyChange = (e) => {
+    const selectedId = e.target.value;
+    const selected = familyOptions.find(f => String(f.id) === selectedId);
+    if (selected) {
+      setActiveFamily(selected.id ? { id: selected.id, name: selected.name } : null);
+    }
+  };
 
   useEffect(() => {
     if (!loading && members.length > 0) {
@@ -61,6 +77,20 @@ export default function MemberList() {
           onChange={e => setSearch(e.target.value)}
           className="flex-1 px-3.5 py-2.5 border-[1.5px] border-slate-200 rounded-lg text-sm outline-none transition-all duration-200 focus:border-ft-accent focus:ring-[3px] focus:ring-ft-accent/15 focus:bg-white bg-white text-ft-text-1 placeholder:text-ft-text-3"
         />
+        <div className="relative">
+          <House className="absolute left-3 top-1/2 -translate-y-1/2 text-ft-text-3 pointer-events-none" size={16} />
+          <select
+            id="family-filter"
+            value={activeFamily?.id ?? ''}
+            onChange={handleFamilyChange}
+            className="appearance-none w-full sm:w-56 pl-9 pr-10 py-2.5 rounded-lg border-[1.5px] border-slate-200 bg-ft-surface text-ft-text-2 text-xs font-semibold outline-none transition-all duration-200 focus:border-ft-accent focus:ring-[3px] focus:ring-ft-accent/15 focus:bg-white cursor-pointer"
+          >
+            {familyOptions.map(family => (
+              <option key={family.id || 'all'} value={family.id}>{family.name}</option>
+            ))}
+          </select>
+          <CaretDown className="absolute right-3 top-1/2 -translate-y-1/2 text-ft-text-3 pointer-events-none" size={16} />
+        </div>
         <div className="flex gap-2">
           {[
             { key: 'all', label: t('common.all') },
@@ -141,8 +171,8 @@ export default function MemberList() {
       {!loading && members.length > 0 && (
         <div ref={gridRef} className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
           {members.map(m => {
-            const isDeceased = !!m.dod;
-            const initials = m.name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
+            const status = getLivingStatus(m);
+            const initials = getMemberInitials(m);
             return (
               <div key={m.id}
                 className="group bg-white border border-slate-200 rounded-2xl p-5 flex flex-col gap-3 h-full transition-all duration-200 hover:shadow-ft-md hover:-translate-y-0.5 hover:border-ft-accent/30"
@@ -150,7 +180,9 @@ export default function MemberList() {
                 {/* Avatar + name */}
                 <div className="flex items-center gap-3">
                   <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 text-base font-bold border-2 ${
-                    isDeceased ? 'bg-slate-100 text-ft-text-3 border-slate-200' : 'bg-ft-accent-light text-ft-accent border-ft-accent/20'
+                    status === 'deceased'
+                      ? 'bg-slate-100 text-ft-text-3 border-slate-200'
+                      : 'bg-ft-accent-light text-ft-accent border-ft-accent/20'
                   }`}>
                     {m.photo ? <img src={`${STORAGE_URL}/${m.photo}`} alt={m.name} className="w-full h-full rounded-full object-cover" /> : initials}
                   </div>
@@ -158,11 +190,13 @@ export default function MemberList() {
                     <div className="font-bold text-sm text-ft-text-1 truncate">{m.name}</div>
                     {m.chinese_name && <div className="text-xs text-ft-text-2 truncate">{m.chinese_name}</div>}
                   </div>
-                  <span className={`ml-auto text-[0.7rem] py-0.5 px-2 rounded-full font-semibold shrink-0 ${
-                    isDeceased ? 'bg-slate-100 text-ft-text-3' : 'bg-green-50 text-green-700'
-                  }`}>
-                    {isDeceased ? t('stats.deceased') : t('stats.living')}
-                  </span>
+                  {status !== 'unknown' && (
+                    <span className={`ml-auto text-[0.7rem] py-0.5 px-2 rounded-full font-semibold shrink-0 ${
+                      status === 'deceased' ? 'bg-slate-100 text-ft-text-3' : 'bg-green-50 text-green-700'
+                    }`}>
+                      {status === 'deceased' ? t('stats.deceased') : t('stats.living')}
+                    </span>
+                  )}
                 </div>
 
                 {/* Details */}
@@ -173,11 +207,11 @@ export default function MemberList() {
 
                 {/* Actions */}
                 <div className="flex gap-2 mt-auto pt-2 border-t border-slate-100">
-                  <Link to={`/people/${m.id}`} className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md bg-ft-accent text-white no-underline font-semibold text-xs hover:bg-ft-accent-hover active:scale-[0.97] transition-all duration-150">
+                  <Link to={buildMemberUrl(m)} className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md bg-ft-accent text-white no-underline font-semibold text-xs hover:bg-ft-accent-hover active:scale-[0.97] transition-all duration-150">
                     <IdentificationCard /> {t('common.profile')}
                   </Link>
                   {hasAbility('edit_member', activeFamily?.id) && (
-                    <Link to={`/people/${m.id}/edit`} className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md border border-slate-200 text-ft-text-2 no-underline font-semibold text-xs hover:bg-ft-accent-light hover:text-ft-accent hover:border-ft-accent active:scale-[0.97] transition-all duration-150">
+                    <Link to={`${buildMemberUrl(m)}/edit`} className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md border border-slate-200 text-ft-text-2 no-underline font-semibold text-xs hover:bg-ft-accent-light hover:text-ft-accent hover:border-ft-accent active:scale-[0.97] transition-all duration-150">
                       {t('common.edit')}
                     </Link>
                   )}

@@ -11,6 +11,7 @@ class Relationship extends Model
         'member1_id',
         'member2_id',
         'relationship_type',
+        'member_order',
         'status',
         'start_date',
         'end_date',

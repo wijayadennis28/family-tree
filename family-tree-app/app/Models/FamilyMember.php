@@ -14,6 +14,7 @@ class FamilyMember extends Model
         'branch_id',
         'name',
         'chinese_name',
+        'initials',
         'gender',
         'dob',
         'dod',

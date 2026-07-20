@@ -9,6 +9,18 @@
  */
 
 /**
+ * Build a people profile URL from a member object.
+ */
+export function buildMemberUrl(member) {
+  const id = member?.id ?? member;
+  const name = member?.name ?? 'member';
+  const slug = slugifyName(name);
+  return `/people/${slug}-${id}`;
+}
+
+
+
+/**
  * Convert a member name into a URL-safe slug segment.
  * Keeps Unicode letters/numbers, collapses separators chars into hyphens.
  */
@@ -38,10 +50,26 @@ export function buildTreeUrl(member) {
 }
 
 /**
- * Parse a hybrid tree URL slug back into its numeric ID.
+ * Build a family tree URL from a family object.
+ */
+export function buildFamilyTreeUrl(family) {
+  const slug = family?.slug ?? family?.id;
+  return `/families/${slug}/tree`;
+}
+
+/**
+ * Build a public (shareable) family tree URL from a family object.
+ */
+export function buildPublicFamilyTreeUrl(family) {
+  const slug = family?.slug ?? family?.id;
+  return `/public/families/${slug}/tree`;
+}
+
+/**
+ * Parse a hybrid URL slug back into its numeric ID.
  * Accepts both old numeric slugs ("1") and new hybrid slugs ("john-doe-1").
  */
-export function parseTreeSlug(slug) {
+export function parseHybridSlug(slug) {
   if (!slug) return null;
   // Match the trailing numeric ID: supports "1" or "john-doe-1"
   const match = String(slug).match(/(\d+)$/);
@@ -50,3 +78,9 @@ export function parseTreeSlug(slug) {
   const numeric = Number(slug);
   return Number.isNaN(numeric) ? null : numeric;
 }
+
+/**
+ * Alias for parseHybridSlug, kept for tree URL callers.
+ * @deprecated Use parseHybridSlug for any hybrid slug format.
+ */
+export const parseTreeSlug = parseHybridSlug;

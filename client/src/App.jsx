@@ -4,7 +4,7 @@ import { AuthContext } from './context/AuthContext';
 
 import Header from './components/layout/Header';
 import Sidebar from './components/layout/Sidebar';
-import Footer from './components/layout/Footer';
+
 import PrivateRoute from './components/ui/PrivateRoute';
 import PageTransition from './components/ui/PageTransition';
 import Login from './components/auth/Login';
@@ -12,6 +12,7 @@ import MemberList from './components/members/MemberList';
 import MemberProfile from './components/members/MemberProfile';
 import MemberForm from './components/members/MemberForm';
 import FamilyTree from './components/tree/FamilyTree';
+import PublicFamilyTree from './components/tree/PublicFamilyTree';
 import Families from './components/families/Families';
 import BranchTree from './components/families/BranchTree';
 import NotificationPanel from './components/notifications/NotificationPanel';
@@ -29,11 +30,14 @@ function SuperAdminRoute({ children }) {
 function AppContent() {  const { user, loading, primaryFamily } = React.useContext(AuthContext);
   const location = useLocation();
   const isLogin = location.pathname.replace(/\/$/,'') === '/login';
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
-  if (loading) return <div>Loading...</div>;
-
+  const isPublicTree = /^\/public\/families\/[^/]+\/tree\/?$/.test(location.pathname);
   const publicPaths = ['/login', '/register', '/forgot-password'];
-  const isPublicPath = publicPaths.includes(location.pathname);
+  const isPublicPath = publicPaths.includes(location.pathname) || isPublicTree;
+
+  if (loading && !isPublicTree) return <div>Loading...</div>;
+
   const isSuperAdmin = user?.role === 'Super Admin';
   if (user && !isSuperAdmin && !primaryFamily && !isPublicPath && location.pathname !== '/families') {
     return <Navigate to="/families" replace />;
@@ -41,10 +45,10 @@ function AppContent() {  const { user, loading, primaryFamily } = React.useConte
 
   return (
     <div className="app">
-      {!isLogin && <Header user={user} />}
+      {!isLogin && !isPublicTree && <Header onMenuToggle={() => setMobileMenuOpen(o => !o)} />}
       <div className="app-body">
-        {!isLogin && <Sidebar />}
-        <main className="app-main">
+        {!isLogin && !isPublicTree && <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />}
+        <main className={`app-main${isPublicTree ? ' app-main-public-tree' : ''}`}>
           <Routes>
             <Route path="/login" element={<PageTransition><Login /></PageTransition>} />
             <Route path="/" element={<Navigate to="/people" replace />} />            <Route path="/people" element={
@@ -62,7 +66,7 @@ function AppContent() {  const { user, loading, primaryFamily } = React.useConte
               }
             />
             <Route
-              path="/people/:id/edit"
+              path="/people/:slug/edit"
               element={
                 <PrivateRoute>
                   <PageTransition><MemberForm /></PageTransition>
@@ -70,7 +74,7 @@ function AppContent() {  const { user, loading, primaryFamily } = React.useConte
               }
             />
             <Route
-              path="/people/:id"
+              path="/people/:slug"
               element={
                 <PrivateRoute>
                   <PageTransition><MemberProfile /></PageTransition>
@@ -94,11 +98,17 @@ function AppContent() {  const { user, loading, primaryFamily } = React.useConte
               }
             />
             <Route
-              path="/families/:familyId/tree"
+              path="/families/:familySlug/tree"
               element={
                 <PrivateRoute>
                   <PageTransition><FamilyTree /></PageTransition>
                 </PrivateRoute>
+              }
+            />
+            <Route
+              path="/public/families/:familySlug/tree"
+              element={
+                <PageTransition><PublicFamilyTree /></PageTransition>
               }
             />
             <Route
@@ -155,7 +165,6 @@ function AppContent() {  const { user, loading, primaryFamily } = React.useConte
           </Routes>
         </main>
       </div>
-      {!isLogin && <Footer />}
     </div>
   );
 }

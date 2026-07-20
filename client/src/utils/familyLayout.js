@@ -2,8 +2,8 @@
    Family Layout — deterministic (no ELK).
    ────────────────────────────────────────── */
 
-const CARD_W = 142;
-const CARD_H = 128;
+const CARD_W = 170;
+const CARD_H = 175;
 const SPOUSE_GAP = 40;
 const CHILD_GAP = 40;
 const JUNCTION_TO_CHILD = 48;
@@ -145,40 +145,76 @@ function upsertMemberNode(nodes, seen, member, pos) {
   return id;
 }
 
+function sortSpouses(spouses) {
+  return [...(spouses || [])].sort((a, b) => {
+    const orderA = a.relationship?.member_order ?? 1;
+    const orderB = b.relationship?.member_order ?? 1;
+    return orderA - orderB;
+  });
+}
+
 function placeCoupleRow(member, leftX, y, seen, nodes, edges, idPrefix = '', spouseGap = SPOUSE_GAP) {
-  const memberPos = { x: leftX, y };
-  const memberNodeId = upsertMemberNode(nodes, seen, member, memberPos);
+  const sortedSpouses = sortSpouses(member.spouses);
 
+  // member_order === 0 places the spouse on the left of the focus member;
+  // member_order > 0 places the spouse on the right.
+  const leftSpouses = sortedSpouses.filter(s => (s.relationship?.member_order ?? 1) === 0);
+  const rightSpouses = sortedSpouses.filter(s => (s.relationship?.member_order ?? 1) !== 0);
+
+  const rowMembers = [...leftSpouses, member, ...rightSpouses];
+  const positions = new Map();
+  let x = leftX;
+
+  for (const m of rowMembers) {
+    const pos = { x, y };
+    const nodeId = upsertMemberNode(nodes, seen, m, pos);
+    positions.set(String(m.id), { pos, nodeId });
+    x += CARD_W + spouseGap;
+  }
+
+  const memberData = positions.get(String(member.id));
+  const memberPos = memberData.pos;
+  const memberNodeId = memberData.nodeId;
   const spouseEntries = [];
-  let x = leftX + CARD_W + spouseGap;
 
-  for (const spouse of member.spouses || []) {
-    const sPos = { x, y };
-    const sNodeId = upsertMemberNode(nodes, seen, spouse, sPos);
-    spouseEntries.push({ pos: sPos, nodeId: sNodeId });
+  for (const spouse of sortedSpouses) {
+    const sData = positions.get(String(spouse.id));
+    spouseEntries.push(sData);
+
+    const [leftPos, rightPos] = memberPos.x < sData.pos.x
+      ? [memberPos, sData.pos]
+      : [sData.pos, memberPos];
+
     edges.push(mkEdge(
       `${idPrefix}e-sp-${member.id}-${spouse.id}`,
       'family-spouse',
       memberNodeId,
-      sNodeId,
-      spouseRoute(memberPos, sPos),
+      sData.nodeId,
+      spouseRoute(leftPos, rightPos),
     ));
-    x += CARD_W + spouseGap;
   }
 
-  const rowW = coupleRowWidth(spouseEntries.length, spouseGap);
+  const rowW = coupleRowWidth(rowMembers.length - 1, spouseGap);
   let junction = bottomCenter(memberPos);
   if (spouseEntries.length > 0) {
     junction = coupleJunction(memberPos, spouseEntries[0].pos);
   }
 
-  return { memberPos, rowW, junction, memberNodeId, spouseNodeId: spouseEntries[0]?.nodeId };
+  return { memberPos, rowLeftX: leftX, rowW, junction, memberNodeId, spouseNodeId: spouseEntries[0]?.nodeId };
+}
+
+function sortChildren(children) {
+  return [...(children || [])].sort((a, b) => {
+    const orderA = a.child_order ?? 0;
+    const orderB = b.child_order ?? 0;
+    return orderA - orderB;
+  });
 }
 
 function layoutSubtree(member, leftX, y, seen, nodes, edges, spouseGap = SPOUSE_GAP) {
   const row = placeCoupleRow(member, leftX, y, seen, nodes, edges, '', spouseGap);
-  const children = dedupeById(member.children || []);
-  const rowCenterX = row.memberPos.x + row.rowW / 2;
+  const children = sortChildren(dedupeById(member.children || []));
+  const rowCenterX = row.rowLeftX + row.rowW / 2;
 
   if (children.length > 0) {
     const childY = row.junction.y + JUNCTION_TO_CHILD;
@@ -432,7 +468,7 @@ export async function buildFamilyLayout(treeData) {
 
     // Compute width of this subtree for the next offset
     const maxX = nodes.reduce((m, n) => Math.max(m, n.position.x + (n.data?.width || CARD_W)), 0);
-    offsetX = maxX + 300;
+    offsetX = maxX + 80;
   }
 
   return { nodes: allNodes, edges: allEdges };

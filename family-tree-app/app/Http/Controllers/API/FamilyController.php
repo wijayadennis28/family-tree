@@ -20,9 +20,10 @@ class FamilyController extends Controller
         if ($user->isSuperAdmin()) {
             return response()->json(
                 Family::with('branches')
-                    ->withCount('members')
+                    ->withCount('activeMembers as members_count')
                     ->orderBy('name')
                     ->get()
+                    ->map(fn ($family) => $this->familyResponse($family))
             );
         }
 
@@ -31,9 +32,10 @@ class FamilyController extends Controller
         return response()->json(
             Family::whereIn('id', $familyIds)
                 ->with('branches')
-                ->withCount('members')
+                ->withCount('activeMembers as members_count')
                 ->orderBy('name')
                 ->get()
+                ->map(fn ($family) => $this->familyResponse($family))
         );
     }
 
@@ -84,7 +86,7 @@ class FamilyController extends Controller
             return $family->load('branches');
         });
 
-        return response()->json($family, 201);
+        return response()->json($this->familyResponse($family), 201);
     }
 
     /**
@@ -98,7 +100,7 @@ class FamilyController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        return response()->json($family);
+        return response()->json($this->familyResponse($family));
     }
 
     /**
@@ -121,7 +123,7 @@ class FamilyController extends Controller
 
         $family->update($validated);
 
-        return response()->json($family);
+        return response()->json($this->familyResponse($family));
     }
 
     /**
@@ -148,14 +150,14 @@ class FamilyController extends Controller
     public function branchTree(Request $request, string $id)
     {
         $user = $request->user();
-        $family = Family::withCount('members')->findOrFail($id);
+        $family = Family::withCount('activeMembers as members_count')->findOrFail($id);
 
         if (!$user->isSuperAdmin() && !$this->canAccessFamily($user, (int) $family->id)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
         $branches = Branch::where('family_id', $family->id)
-            ->withCount('members')
+            ->withCount('activeMembers as members_count')
             ->orderBy('name')
             ->get();
 
@@ -163,6 +165,7 @@ class FamilyController extends Controller
             'family' => [
                 'id' => $family->id,
                 'name' => $family->name,
+                'slug' => $family->slug,
                 'description' => $family->description,
                 'members_count' => $family->members_count,
             ],
@@ -173,6 +176,26 @@ class FamilyController extends Controller
                 'members_count' => $branch->members_count,
             ])->values(),
         ]);
+    }
+
+    /**
+     * Format a family for API responses, including the public slug.
+     */
+    private function familyResponse(Family $family): array
+    {
+        return [
+            'id' => $family->id,
+            'name' => $family->name,
+            'slug' => $family->slug,
+            'description' => $family->description,
+            'is_active' => $family->is_active,
+            'is_public' => $family->is_public,
+            'created_by' => $family->created_by,
+            'created_at' => $family->created_at,
+            'updated_at' => $family->updated_at,
+            'branches' => $family->branches,
+            'members_count' => $family->members_count ?? 0,
+        ];
     }
 
     /**

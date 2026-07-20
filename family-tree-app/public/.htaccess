@@ -20,6 +20,10 @@
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
 
+    # Storage files -> serve directly (404 if missing, don't fall back to SPA)
+    RewriteCond %{REQUEST_URI} ^/storage/ [NC]
+    RewriteRule ^ - [L]
+
     # Everything else -> React SPA (fixes React Router page refreshes)
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f

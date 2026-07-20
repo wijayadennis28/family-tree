@@ -13,34 +13,38 @@ import {
 import { STORAGE_URL } from '../../utils/storageUrl';
 import { panelIn } from '../../utils/gsapUtils';
 import { useLanguage } from '../../context/LanguageContext';
+import { getMemberInitials } from '../../utils/initials';
+import { getLivingStatus } from '../../utils/livingStatus';
+import { buildMemberUrl } from '../../utils/treeUrl';
+import { formatOrdinal } from '../../utils/ordinal';
 
 /* ──────────────────────────────────────────
    Status chip for marriage inspector.
    ────────────────────────────────────────── */
-function StatusPill({ status, t }) {
-  if (!status) return <span className="status-pill-other">—</span>;
+function StatusPill({ status, relationshipType, t }) {
+  const effectiveStatus = status || (relationshipType === 'Spouse' ? 'Married' : null);
+  if (!effectiveStatus) return <span className="status-pill-other">—</span>;
+  const normalizedStatus =
+    effectiveStatus === 'Married'
+      ? 'Married'
+      : effectiveStatus === 'Divorced'
+      ? 'Divorced'
+      : 'Other';
   const cls =
-    status === 'Married'
+    normalizedStatus === 'Married'
       ? 'status-pill-married'
-      : status === 'Divorced'
+      : normalizedStatus === 'Divorced'
       ? 'status-pill-divorced'
       : 'status-pill-other';
-  const label = t(`memberProfile.status${status}`);
-  return <span className={cls}>{label}</span>;
+  const label = t(`memberProfile.status${normalizedStatus}`);
+  return <span className={`status-pill ${cls}`}>{label}</span>;
 }
 
 /* ──────────────────────────────────────────
    Small avatar used inside marriage cards.
    ────────────────────────────────────────── */
-function MiniAvatar({ name, photo, isDeceased }) {
-  const initials = name
-    ? name
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .slice(0, 2)
-        .toUpperCase()
-    : '?';
+function MiniAvatar({ name, photo, isDeceased, member }) {
+  const initials = getMemberInitials(member || { name, initials: '' });
 
   return (
     <div
@@ -93,22 +97,16 @@ function SectionTitle({ children }) {
    Right-side detail panel — Framer-style
    editorial person summary.
    ────────────────────────────────────────── */
-export default function MemberDetailPanel({ member, treeData, onClose, onNavigate }) {
-  const { t } = useLanguage();
+export default function MemberDetailPanel({ member, treeData, onClose, onNavigate, publicView = false }) {
+  const { t, language } = useLanguage();
   const panelRef = useRef(null);
   useEffect(() => {
     panelIn(panelRef.current);
   }, [member]);
 
-  const isDeceased = !member.is_living;
-  const initials = member.name
-    ? member.name
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .slice(0, 2)
-        .toUpperCase()
-    : '?';
+  const status = getLivingStatus(member);
+  const isDeceased = status === 'deceased';
+  const initials = getMemberInitials(member);
 
   const findNode = (n, id) => {
     if (!n) return null;
@@ -120,6 +118,10 @@ export default function MemberDetailPanel({ member, treeData, onClose, onNavigat
       return null;
     }
     if (n.id === id) return n;
+    for (const s of n.spouses || []) {
+      const r = findNode(s, id);
+      if (r) return r;
+    }
     for (const p of n.parents || []) {
       const r = findNode(p, id);
       if (r) return r;
@@ -131,13 +133,49 @@ export default function MemberDetailPanel({ member, treeData, onClose, onNavigat
     return null;
   };
 
+  /** Collect spouse entries from any node that lists this member as a spouse.
+   *  This is needed because the tree stores spouse relationships one-way.
+   *  The returned spouse object represents the partner (the node that owns the
+   *  spouses array), with the relationship data merged in. */
+  const findSpouses = (n, id) => {
+    const results = [];
+    const walk = (node) => {
+      if (!node) return;
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+        return;
+      }
+      (node.spouses || []).forEach((s) => {
+        if (String(s.id) === String(id)) {
+          results.push({ ...node, relationship: s.relationship });
+        }
+        walk(s);
+      });
+      (node.parents || []).forEach(walk);
+      (node.children || []).forEach(walk);
+    };
+    walk(n);
+    return results;
+  };
+
   const node = findNode(treeData, member.id);
-  const spouses = node?.spouses || [];
+  const nodeSpouses = node?.spouses || [];
+  const scannedSpouses = findSpouses(treeData, member.id);
+  const spouses = nodeSpouses.length > 0 ? nodeSpouses : scannedSpouses;
   const parents = node?.parents || [];
 
-  // Relationship context line, e.g. "Child of Robert + Eleanor"
+  // Relationship context line, e.g. "2nd child of Robert + Eleanor"
   const parentNames = parents.map((p) => p.name).join(' + ');
-  const relationLine = parents.length > 0 ? t('memberProfile.childOf', { parents: parentNames }) : null;
+  const childOrder = member.child_order;
+  const relationLine =
+    parents.length > 0
+      ? childOrder > 0
+        ? t('memberProfile.childOfOrder', {
+            order: formatOrdinal(childOrder, language),
+            parents: parentNames,
+          })
+        : t('memberProfile.childOf', { parents: parentNames })
+      : null;
 
   // Life-event rows
   const lifeRows = [
@@ -191,25 +229,27 @@ export default function MemberDetailPanel({ member, treeData, onClose, onNavigat
             </div>
 
             <div className="min-w-0 pt-1">
-              <h2 className="text-xl font-extrabold text-ft-text-1 tracking-tight truncate">
+              <h2 className="text-xl font-extrabold text-ft-text-1 tracking-tight leading-tight break-words">
                 {member.name}
               </h2>
               {member.chinese_name && (
                 <p className="text-sm text-ft-text-2 mt-0.5 truncate">{member.chinese_name}</p>
-              )}                <span
-                  className={`inline-flex items-center gap-1.5 mt-2 px-2 py-0.5 rounded-full text-[0.7rem] font-semibold ${
-                    isDeceased
-                      ? 'bg-slate-100 text-ft-text-3'
-                      : 'bg-green-50 text-green-700'
-                  }`}
-                >
+              )}                {status !== 'unknown' && (
                   <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      isDeceased ? 'bg-slate-400' : 'bg-green-500'
+                    className={`inline-flex items-center gap-1.5 mt-2 px-2 py-0.5 rounded-full text-[0.7rem] font-semibold ${
+                      isDeceased
+                        ? 'bg-slate-100 text-ft-text-3'
+                        : 'bg-green-50 text-green-700'
                     }`}
-                  />
-                  {isDeceased ? t('memberProfile.deceased') : t('memberProfile.living')}
-                </span>
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isDeceased ? 'bg-slate-400' : 'bg-green-500'
+                      }`}
+                    />
+                    {isDeceased ? t('memberProfile.deceased') : t('memberProfile.living')}
+                  </span>
+                )}
             </div>
           </div>
 
@@ -224,7 +264,7 @@ export default function MemberDetailPanel({ member, treeData, onClose, onNavigat
           {/* Life events */}
           {lifeRows.length > 0 && (              <div className="mb-6">
               <SectionTitle>{t('memberProfile.life')}</SectionTitle>
-              <div className="bg-white border border-ft-border-hair rounded-2xl px-3 divide-y divide-ft-border-hair">
+              <div className="bg-white border border-ft-border-hair rounded-2xl p-4 divide-y divide-ft-border-hair overflow-hidden">
                 {lifeRows.map((row) => (
                   <LifeRow key={row.label} icon={row.icon} label={row.label} value={row.value} />
                 ))}
@@ -242,13 +282,14 @@ export default function MemberDetailPanel({ member, treeData, onClose, onNavigat
                   return (
                     <div
                       key={spouse.id}
-                      className="bg-white border border-ft-border-hair rounded-2xl p-4"
+                      className="bg-white border border-ft-border-hair rounded-2xl p-4 overflow-hidden"
                     >
                       <div className="flex items-center gap-3 mb-3">
                         <MiniAvatar
                           name={spouse.name}
                           photo={spouse.photo}
-                          isDeceased={!spouse.is_living}
+                          isDeceased={getLivingStatus(spouse) === 'deceased'}
+                          member={spouse}
                         />
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-bold text-ft-text-1 truncate">
@@ -258,38 +299,35 @@ export default function MemberDetailPanel({ member, treeData, onClose, onNavigat
                             {t('memberProfile.and', { a: member.name, b: spouse.name })}
                           </div>
                         </div>
-                        <StatusPill status={rel.status} t={t} />
+                        <StatusPill status={rel.status} relationshipType={rel.type} t={t} />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="bg-ft-surface-2 rounded-lg p-2.5">
-                          <span className="block text-[0.65rem] font-bold uppercase tracking-wider text-ft-text-3 mb-0.5">
-                            {t('memberProfile.married')}
-                          </span>
-                          <span className="font-semibold text-ft-text-1 flex items-center gap-1">
-                            <Clock className="text-ft-text-3" size={10} />
-                            {rel.start_date || '—'}
-                          </span>
+                      {(rel.start_date || rel.end_date) && (
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          {rel.start_date && (
+                            <div className="bg-ft-surface-2 rounded-lg p-2.5">
+                              <span className="block text-[0.65rem] font-bold uppercase tracking-wider text-ft-text-3 mb-0.5">
+                                {t('memberProfile.married')}
+                              </span>
+                              <span className="font-semibold text-ft-text-1 flex items-center gap-1">
+                                <Clock className="text-ft-text-3" size={10} />
+                                {rel.start_date}
+                              </span>
+                            </div>
+                          )}
+                          {rel.end_date && (
+                            <div className="bg-ft-surface-2 rounded-lg p-2.5">
+                              <span className="block text-[0.65rem] font-bold uppercase tracking-wider text-ft-text-3 mb-0.5">
+                                {t('memberProfile.ended')}
+                              </span>
+                              <span className="font-semibold text-ft-text-1 flex items-center gap-1">
+                                <Clock className="text-ft-text-3" size={10} />
+                                {rel.end_date}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        {rel.end_date ? (
-                          <div className="bg-ft-surface-2 rounded-lg p-2.5">
-                          <span className="block text-[0.65rem] font-bold uppercase tracking-wider text-ft-text-3 mb-0.5">
-                            {t('memberProfile.ended')}
-                          </span>
-                            <span className="font-semibold text-ft-text-1 flex items-center gap-1">
-                              <Clock className="text-ft-text-3" size={10} />
-                              {rel.end_date}
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="bg-ft-surface-2 rounded-lg p-2.5">
-                          <span className="block text-[0.65rem] font-bold uppercase tracking-wider text-ft-text-3 mb-0.5">
-                            {t('memberProfile.status')}
-                          </span>
-                          <span className="font-semibold text-ft-text-1">{t('memberProfile.present')}</span>
-                          </div>
-                        )}
-                      </div>
+                      )}
 
                       {rel.notes && (
                         <p className="mt-3 text-xs text-ft-text-2 leading-relaxed bg-ft-surface-2 rounded-xl p-3">
@@ -301,7 +339,7 @@ export default function MemberDetailPanel({ member, treeData, onClose, onNavigat
                 })}
               </div>
             ) : (
-              <p className="text-sm text-ft-text-3 italic bg-white border border-ft-border-hair rounded-2xl p-4">
+              <p className="text-sm text-ft-text-3 italic bg-white border border-ft-border-hair rounded-2xl p-4 overflow-hidden">
                 {t('memberProfile.noMarriages')}
               </p>
             )}
@@ -323,22 +361,24 @@ export default function MemberDetailPanel({ member, treeData, onClose, onNavigat
         </div>
 
         {/* Sticky action footer */}
-        <div className="absolute bottom-0 left-0 right-0 px-5 py-4 bg-white border-t border-ft-border-hair flex flex-col gap-2.5">
-          <button
-            onClick={() => onNavigate(member)}
-            className="w-full py-2.5 rounded-lg bg-ft-accent text-white font-semibold text-sm hover:bg-ft-accent-hover active:scale-[0.98] transition-all duration-150 btn-shimmer flex items-center justify-center gap-2"
-          >
-            <TreeStructure />
-            {t('memberProfile.viewAtlas')}
-          </button>
-          <Link
-            to={`/people/${member.id}`}
-            onClick={onClose}
-            className="w-full py-2.5 rounded-lg border border-slate-200 text-ft-text-2 font-semibold text-sm hover:bg-ft-accent-light hover:text-ft-accent hover:border-ft-accent transition-all duration-150 text-center no-underline flex items-center justify-center gap-2"
-          >
-            <IdentificationCard /> {t('memberProfile.viewFullProfile')}
-          </Link>
-        </div>
+        {!publicView && (
+          <div className="absolute bottom-0 left-0 right-0 px-5 py-4 bg-white border-t border-ft-border-hair flex flex-col gap-2.5">
+            <button
+              onClick={() => onNavigate(member)}
+              className="w-full py-2.5 rounded-lg bg-ft-accent text-white font-semibold text-sm hover:bg-ft-accent-hover active:scale-[0.98] transition-all duration-150 btn-shimmer flex items-center justify-center gap-2"
+            >
+              <TreeStructure />
+              {t('memberProfile.viewAtlas')}
+            </button>
+            <Link
+              to={buildMemberUrl(member)}
+              onClick={onClose}
+              className="w-full py-2.5 rounded-lg border border-slate-200 text-ft-text-2 font-semibold text-sm hover:bg-ft-accent-light hover:text-ft-accent hover:border-ft-accent transition-all duration-150 text-center no-underline flex items-center justify-center gap-2"
+            >
+              <IdentificationCard /> {t('memberProfile.viewFullProfile')}
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );

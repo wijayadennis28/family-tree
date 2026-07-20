@@ -37,7 +37,7 @@ export default function FamilyNode({ data, selected }) {
   return (
     <div
       className={`family-node${editMode ? ' edit-mode' : ''}`}
-      style={{ width: data.width || 142, height: data.height || 128 }}
+      style={{ width: data.width || 170, height: data.height || 160 }}
     >
       {/* Handles — always present so ReactFlow has anchor points for edges.
           Read-only mode: invisible + non-interactive (edges still compute correct

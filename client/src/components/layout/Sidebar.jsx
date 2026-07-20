@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { useContext } from 'react';
+import { useContext, useEffect } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import {
@@ -9,6 +9,8 @@ import {
   UserGear,
   Shield,
   LockKey,
+  Bell,
+  X,
 } from '@phosphor-icons/react';
 
 const mainNav = [
@@ -18,18 +20,21 @@ const mainNav = [
 
 const settingsNav = { to: '/settings', labelKey: 'sidebar.settings', icon: <Gear /> };
 
+const notificationsNav = { to: '/notifications', labelKey: 'sidebar.notifications', icon: <Bell /> };
+
 const adminNav = [
   { to: '/admin/users',     labelKey: 'sidebar.users',     icon: <UserGear /> },
   { to: '/admin/roles',     labelKey: 'sidebar.roles',     icon: <Shield /> },
   { to: '/admin/abilities', labelKey: 'sidebar.abilities', icon: <LockKey /> },
 ];
 
-function SidebarItem({ to, labelKey, icon, end }) {
+function SidebarItem({ to, labelKey, icon, end, onClick }) {
   const { t } = useLanguage();
   return (
     <NavLink
       to={to}
       end={end}
+      onClick={onClick}
       className={({ isActive }) =>
         `group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold border transition-all duration-200 ${
           isActive
@@ -53,10 +58,25 @@ function SectionLabel({ children }) {
   );
 }
 
-export default function Sidebar() {
+export default function Sidebar({ mobileMenuOpen, setMobileMenuOpen }) {
   const { isAdmin, user } = useContext(AuthContext);
   const isSuperAdmin = user?.role === 'Super Admin';
   const { t } = useLanguage();
+
+  const closeMobileMenu = () => setMobileMenuOpen(false);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    document.body.style.overflow = 'hidden';
+    const handleKey = (e) => {
+      if (e.key === 'Escape') setMobileMenuOpen(false);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [mobileMenuOpen, setMobileMenuOpen]);
 
   return (
     <>
@@ -131,6 +151,58 @@ export default function Sidebar() {
           )}
         </NavLink>
       </nav>
+
+      {/* Mobile full navigation drawer */}
+      {mobileMenuOpen && (
+        <>
+          <div
+            className="md:hidden fixed inset-0 bg-black/30 z-50"
+            onClick={closeMobileMenu}
+            aria-hidden="true"
+          />
+          <div
+            className="md:hidden fixed inset-y-0 left-0 w-[280px] max-w-[80vw] bg-white shadow-xl z-50 flex flex-col"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('sidebar.menu')}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-ft-border-hair">
+              <span className="text-sm font-bold uppercase tracking-wider text-ft-text-3">
+                {t('sidebar.menu')}
+              </span>
+              <button
+                onClick={closeMobileMenu}
+                aria-label={t('common.close')}
+                className="w-9 h-9 flex items-center justify-center rounded-lg text-ft-text-3 hover:text-ft-text-1 hover:bg-ft-surface-2 transition-colors"
+              >
+                <X />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3">
+              <div className="flex flex-col gap-1">
+                <SectionLabel>{t('sidebar.main')}</SectionLabel>
+                {mainNav.map(item => (
+                  <SidebarItem key={item.to} {...item} onClick={closeMobileMenu} />
+                ))}
+              </div>
+              <div className="flex flex-col gap-1 mt-2">
+                <SectionLabel>{t('sidebar.preferences')}</SectionLabel>
+                <SidebarItem {...settingsNav} onClick={closeMobileMenu} />
+                <SidebarItem {...notificationsNav} onClick={closeMobileMenu} />
+              </div>
+              {isAdmin && (
+                <div className="flex flex-col gap-1 mt-2 pt-4 border-t border-ft-border-hair">
+                  <SectionLabel>{t('sidebar.admin')}</SectionLabel>
+                  {adminNav.map(item => {
+                    if (item.to === '/admin/users' && !isSuperAdmin) return null;
+                    return <SidebarItem key={item.to} {...item} onClick={closeMobileMenu} />;
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }

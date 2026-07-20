@@ -1,16 +1,17 @@
 import { useRef } from 'react';
 import { cardHoverIn, cardHoverOut } from '../../utils/gsapUtils';
 import { STORAGE_URL } from '../../utils/storageUrl';
+import { getLivingStatus } from '../../utils/livingStatus';
+import { getMemberInitials } from '../../utils/initials';
 
 export default function MemberCard({ member, onClick, compact, enterDelay, isSelected }) {
   const cardRef = useRef(null);
 
-  const initials = member?.name
-    ? member.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-    : '?';
+  const initials = getMemberInitials(member);
 
   const genderClass = member?.gender?.toLowerCase() || 'other';
-  const isDeceased = !member?.is_living;
+  const status = getLivingStatus(member);
+  const isDeceased = status === 'deceased';
 
   // ponytail: forward the React event so callers can measure the card
   // for overlay-anchored UI (the ActionPill in FamilyTree).

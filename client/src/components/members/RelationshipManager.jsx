@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from '@phosphor-icons/react';
+import { Link, Pencil, Trash } from '@phosphor-icons/react';
 import { useApi } from '../../hooks/useApi';
 import { useLanguage } from '../../context/LanguageContext';
+import { useToast } from '../../context/ToastContext';
 
 import { REL_ICON, getRelTypeKey } from '../../utils/relationshipIcons';
+import { getMemberInitials } from '../../utils/initials';
+import { getLivingStatus } from '../../utils/livingStatus';
+import RelationshipEditModal from './RelationshipEditModal';
 
 const REL_TYPES = ['Parent', 'Child', 'Spouse', 'Sibling', 'Grandparent', 'Grandchild', 'Uncle/Aunt', 'Niece/Nephew'];
 
@@ -11,6 +15,7 @@ const inputClass = "w-full px-3.5 py-2.5 border-[1.5px] border-slate-200 rounded
 
 export default function RelationshipManager({ memberId, memberName, familyId }) {
   const api = useApi();
+  const toast = useToast();
   const { t } = useLanguage();
 
   const [rels,        setRels]        = useState([]);
@@ -18,11 +23,15 @@ export default function RelationshipManager({ memberId, memberName, familyId }) 
 
   const [adding,  setAdding]  = useState(false);
   const [relType, setRelType] = useState('Child');
+  const [memberOrder, setMemberOrder] = useState(1);
+  const [childOrder, setChildOrder] = useState(0);
   const [search,  setSearch]  = useState('');
   const [results, setResults] = useState([]);
   const [picked,  setPicked]  = useState(null);
   const [saving,  setSaving]  = useState(false);
   const [error,   setError]   = useState(null);
+
+  const [editingRel, setEditingRel] = useState(null);
 
   const searchRef = useRef(null);
 
@@ -55,10 +64,17 @@ export default function RelationshipManager({ memberId, memberName, familyId }) 
     if (!picked) return;
     setSaving(true);
     setError(null);
-    const [, err] = await api.post(`/members/${memberId}/relationships`, {
+    const payload = {
       member2_id: picked.id,
       relationship_type: relType,
-    });
+    };
+    if (relType === 'Spouse') {
+      payload.member_order = memberOrder;
+    }
+    if (relType === 'Child') {
+      payload.member_order = childOrder;
+    }
+    const [, err] = await api.post(`/members/${memberId}/relationships`, payload);
     if (err) {
       setError(typeof err === 'string' ? err : t('relationshipManager.saveError'));
     } else {
@@ -77,8 +93,44 @@ export default function RelationshipManager({ memberId, memberName, familyId }) 
     if (!err) loadRels();
   };
 
+  const handleUpdateMemberOrder = async (rel, newOrder) => {
+    if (!['Spouse', 'Child', 'Parent'].includes(rel.relationship_type)) return;
+    if (newOrder < 0) return;
+    const [, err] = await api.put(`/relationships/${rel.id}`, { member_order: newOrder });
+    if (!err) loadRels();
+  };
+
+  const handleDeleteGroup = async (relIds) => {
+    if (!window.confirm(t('relationshipManager.removeGroupConfirm'))) return;
+    const results = await Promise.all(relIds.map(id => api.delete(`/members/${memberId}/relationships/${id}`)));
+    const hasError = results.some(([, err]) => err);
+    if (hasError) {
+      toast.addToast(t('relationshipManager.deleteGroupError'), 'error');
+    }
+    loadRels();
+  };
+
   const getOtherMember = (rel) =>
     String(rel.member1_id) === String(memberId) ? rel.member2 : rel.member1;
+
+  const getActualRelType = (rel) => {
+    if (rel.relationship_type === 'Parent') {
+      return String(rel.member2_id) === String(memberId) ? 'Parent' : 'Child';
+    }
+    if (rel.relationship_type === 'Grandparent') {
+      return String(rel.member2_id) === String(memberId) ? 'Grandparent' : 'Grandchild';
+    }
+    if (rel.relationship_type === 'Uncle/Aunt') {
+      return String(rel.member2_id) === String(memberId) ? 'Uncle/Aunt' : 'Niece/Nephew';
+    }
+    return rel.relationship_type;
+  };
+
+  const parentRels = rels.filter(r => r.relationship_type === 'Parent' && String(r.member2_id) === String(memberId));
+  const otherRels = rels.filter(r => !(r.relationship_type === 'Parent' && String(r.member2_id) === String(memberId)));
+  const displayItems = parentRels.length > 0
+    ? [{ isParentGroup: true, id: 'parent-group', rels: parentRels }, ...otherRels]
+    : otherRels;
 
   return (
     <div>
@@ -113,7 +165,7 @@ export default function RelationshipManager({ memberId, memberName, familyId }) 
             </div>
             <div className="flex flex-wrap gap-1.5">
               {REL_TYPES.map(type => (
-                <button key={type} onClick={() => setRelType(type)}
+                <button key={type} onClick={() => { setRelType(type); if (type !== 'Spouse') setMemberOrder(1); }}
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border-[1.5px] text-xs font-semibold cursor-pointer transition-all duration-150 ${
                     relType === type
                       ? 'bg-ft-accent text-white border-ft-accent'
@@ -125,6 +177,57 @@ export default function RelationshipManager({ memberId, memberName, familyId }) 
               ))}
             </div>
           </div>
+
+          {/* Spouse side selector */}
+          {relType === 'Spouse' && (
+            <div className="mb-3.5">
+              <div className="text-xs font-semibold text-ft-text-3 uppercase tracking-wider mb-2">
+                {t('relationshipManager.spouseSide')}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <button onClick={() => setMemberOrder(0)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border-[1.5px] text-xs font-semibold cursor-pointer transition-all duration-150 ${
+                    memberOrder === 0
+                      ? 'bg-ft-accent text-white border-ft-accent'
+                      : 'bg-ft-surface text-ft-text-2 border-slate-200 hover:border-ft-accent hover:text-ft-accent'
+                  }`}>
+                  {t('relationshipManager.leftOfMember', { name: memberName })}
+                </button>
+                <button onClick={() => setMemberOrder(1)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border-[1.5px] text-xs font-semibold cursor-pointer transition-all duration-150 ${
+                    memberOrder === 1
+                      ? 'bg-ft-accent text-white border-ft-accent'
+                      : 'bg-ft-surface text-ft-text-2 border-slate-200 hover:border-ft-accent hover:text-ft-accent'
+                  }`}>
+                  {t('relationshipManager.rightOfMember', { name: memberName })}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Child order selector */}
+          {relType === 'Child' && (
+            <div className="mb-3.5">
+              <div className="text-xs font-semibold text-ft-text-3 uppercase tracking-wider mb-2">
+                {t('relationshipManager.childOrder')}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setChildOrder(Math.max(0, childOrder - 1))}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-ft-text-2 hover:text-ft-accent hover:border-ft-accent hover:bg-ft-accent-light transition-all"
+                >
+                  –
+                </button>
+                <span className="w-10 text-center text-sm font-bold text-ft-text-1">{childOrder + 1}</span>
+                <button
+                  onClick={() => setChildOrder(childOrder + 1)}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-ft-text-2 hover:text-ft-accent hover:border-ft-accent hover:bg-ft-accent-light transition-all"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Member search */}
           <div className="mb-3">
@@ -189,7 +292,7 @@ export default function RelationshipManager({ memberId, memberName, familyId }) 
               }`}>
               {saving ? t('common.saving') : t('relationshipManager.saveLink')}
             </button>
-            <button onClick={() => { setAdding(false); setSearch(''); setResults([]); setPicked(null); setError(null); }}
+            <button onClick={() => { setAdding(false); setSearch(''); setResults([]); setPicked(null); setError(null); setMemberOrder(1); setChildOrder(0); }}
               className="px-5 py-2 bg-transparent text-ft-text-2 border-[1.5px] border-slate-200 rounded-lg font-semibold text-sm cursor-pointer hover:bg-ft-accent-light hover:text-ft-accent hover:border-ft-accent transition-all duration-150">
               {t('common.cancel')}
             </button>
@@ -207,11 +310,94 @@ export default function RelationshipManager({ memberId, memberName, familyId }) 
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {rels.map(rel => {
+          {displayItems.map(item => {
+            if (item.isParentGroup) {
+              const groupOrder = item.rels[0].member_order ?? 0;
+              return (
+                <div key={item.id} className="flex items-center gap-3 bg-ft-surface border border-slate-100 rounded-xl py-3 px-3.5 hover:shadow-ft-sm transition-shadow duration-150">
+                  {/* Stacked avatars */}
+                  <div className="flex -space-x-2 shrink-0">
+                    {item.rels.map((rel, idx) => {
+                      const parent = getOtherMember(rel);
+                      const isDec = getLivingStatus(parent) === 'deceased';
+                      return (
+                        <div
+                          key={rel.id}
+                          className="w-9 h-9 rounded-full bg-ft-accent-light border-2 flex items-center justify-center text-xs font-bold text-ft-accent"
+                          style={{
+                            borderColor: isDec ? 'var(--deceased)' : 'var(--living)',
+                            zIndex: item.rels.length - idx,
+                          }}
+                        >
+                          {getMemberInitials(parent)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Parent names */}
+                  <div className="flex-1 min-w-0 flex flex-col gap-1">
+                    {item.rels.map(rel => {
+                      const parent = getOtherMember(rel);
+                      return (
+                        <div key={rel.id} className="flex items-center justify-between text-sm">
+                          <div className="font-bold text-ft-text-1 truncate">{parent.name}</div>
+                          <button
+                            onClick={() => handleDelete(rel.id)}
+                            className="bg-transparent border-none cursor-pointer text-slate-300 text-lg px-2 py-0 leading-none hover:text-red-400 transition-colors"
+                            title={t('relationshipManager.removeRelationship')}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Relationship badge */}
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-ft-accent-light text-ft-accent text-xs font-bold shrink-0">
+                    <span className="inline-flex items-center justify-center leading-none">{REL_ICON.Parent}</span>
+                    <span>{t(item.rels.length > 1 ? 'relationshipManager.parents' : 'relTypeModal.parent')}</span>
+                  </span>
+                  {/* Birth order controls */}
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      onClick={() => handleUpdateMemberOrder(item.rels[0], Math.max(0, groupOrder - 1))}
+                      className="w-6 h-6 flex items-center justify-center rounded text-xs border border-slate-200 text-ft-text-3 hover:text-ft-accent hover:border-ft-accent hover:bg-ft-accent-light transition-all"
+                      title={t('relationshipManager.moveEarlier')}
+                    >
+                      ▲
+                    </button>
+                    <span className="text-[0.65rem] font-bold text-ft-text-3 w-4 text-center">
+                      {groupOrder + 1}
+                    </span>
+                    <button
+                      onClick={() => handleUpdateMemberOrder(item.rels[0], groupOrder + 1)}
+                      className="w-6 h-6 flex items-center justify-center rounded text-xs border border-slate-200 text-ft-text-3 hover:text-ft-accent hover:border-ft-accent hover:bg-ft-accent-light transition-all"
+                      title={t('relationshipManager.moveLater')}
+                    >
+                      ▼
+                    </button>
+                  </div>
+                  {/* Birth order is edited inline for parent groups */}
+                  {/* Group delete */}
+                  {item.rels.length > 1 && (
+                    <button
+                      onClick={() => handleDeleteGroup(item.rels.map(r => r.id))}
+                      className="bg-transparent border-none cursor-pointer text-slate-300 text-base px-1 py-0 leading-none hover:text-red-400 transition-colors"
+                      title={t('relationshipManager.removeGroup')}
+                    >
+                      <Trash />
+                    </button>
+                  )}
+                </div>
+              );
+            }
+
+            const rel = item;
+            const actualType = getActualRelType(rel);
             const other = getOtherMember(rel);
             if (!other) return null;
-            const isDeceased = !!other.dod;
-            const initials = other.name?.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
+            const isDeceased = getLivingStatus(other) === 'deceased';
+            const initials = getMemberInitials(other);
             return (
               <div key={rel.id} className="flex items-center gap-3 bg-ft-surface border border-slate-100 rounded-xl py-3 px-3.5 hover:shadow-ft-sm transition-shadow duration-150">
                 {/* Avatar */}
@@ -226,9 +412,51 @@ export default function RelationshipManager({ memberId, memberName, familyId }) 
                 </div>
                 {/* Relationship type badge */}
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-ft-accent-light text-ft-accent text-xs font-bold shrink-0">
-                  <span className="inline-flex items-center justify-center leading-none">{REL_ICON[rel.relationship_type]}</span>
-                  <span>{t(`relTypeModal.${rel.relationship_type.toLowerCase()}`)}</span>
+                  <span className="inline-flex items-center justify-center leading-none">{REL_ICON[actualType]}</span>
+                  <span>{t(`relTypeModal.${getRelTypeKey(actualType)}`)}</span>
                 </span>
+                {/* Spouse side toggle */}
+                {actualType === 'Spouse' && (
+                  <button
+                    onClick={() => handleUpdateMemberOrder(rel, rel.member_order === 0 ? 1 : 0)}
+                    className="text-xs font-semibold px-2 py-1 rounded-lg border border-slate-200 text-ft-text-2 hover:text-ft-accent hover:border-ft-accent hover:bg-ft-accent-light transition-colors shrink-0"
+                    title={t('relationshipManager.spouseSide')}
+                  >
+                    {rel.member_order === 0
+                      ? t('relationshipManager.leftOfMember', { name: memberName })
+                      : t('relationshipManager.rightOfMember', { name: memberName })}
+                  </button>
+                )}
+                {/* Child order reorder */}
+                {actualType === 'Child' && (
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      onClick={() => handleUpdateMemberOrder(rel, Math.max(0, (rel.member_order ?? 0) - 1))}
+                      className="w-6 h-6 flex items-center justify-center rounded text-xs border border-slate-200 text-ft-text-3 hover:text-ft-accent hover:border-ft-accent hover:bg-ft-accent-light transition-all"
+                      title={t('relationshipManager.moveEarlier')}
+                    >
+                      ▲
+                    </button>
+                    <span className="text-[0.65rem] font-bold text-ft-text-3 w-4 text-center">
+                      {(rel.member_order ?? 0) + 1}
+                    </span>
+                    <button
+                      onClick={() => handleUpdateMemberOrder(rel, (rel.member_order ?? 0) + 1)}
+                      className="w-6 h-6 flex items-center justify-center rounded text-xs border border-slate-200 text-ft-text-3 hover:text-ft-accent hover:border-ft-accent hover:bg-ft-accent-light transition-all"
+                      title={t('relationshipManager.moveLater')}
+                    >
+                      ▼
+                    </button>
+                  </div>
+                )}
+                {/* Edit */}
+                <button
+                  onClick={() => setEditingRel(rel)}
+                  className="bg-transparent border-none cursor-pointer text-slate-300 text-base px-1 py-0 leading-none hover:text-ft-accent transition-colors"
+                  title={t('relationshipManager.editRelationship')}
+                >
+                  <Pencil />
+                </button>
                 {/* Delete */}
                 <button onClick={() => handleDelete(rel.id)}
                   className="bg-transparent border-none cursor-pointer text-slate-300 text-lg px-1 py-0 leading-none hover:text-red-400 transition-colors"
@@ -240,6 +468,15 @@ export default function RelationshipManager({ memberId, memberName, familyId }) 
           })}
         </div>
       )}
+
+      <RelationshipEditModal
+        relationship={editingRel}
+        memberId={memberId}
+        memberName={memberName}
+        open={!!editingRel}
+        onClose={() => setEditingRel(null)}
+        onSaved={loadRels}
+      />
     </div>
   );
 }

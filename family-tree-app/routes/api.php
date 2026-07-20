@@ -33,6 +33,9 @@ Route::post('/auth/login',    [AuthController::class, 'login']);
 // Public invitation lookup
 Route::get('/invitations/{token}', [InvitationController::class, 'show']);
 
+// Public family tree (no auth required)
+Route::get('/families/{familySlug}/tree', [TreeController::class, 'familyTree']);
+
 // -------------------------------------------------------
 // Authenticated routes
 // -------------------------------------------------------
@@ -89,7 +92,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ── Families ──────────────────────────────────────────────────
     Route::get('/families', [FamilyController::class, 'index']);
-    Route::get('/families/{id}/tree', [TreeController::class, 'familyTree']);
     Route::post('/families', [FamilyController::class, 'store']);
     Route::get('/families/{id}', [FamilyController::class, 'show']);
     Route::get('/families/{id}/branch-tree', [FamilyController::class, 'branchTree']);

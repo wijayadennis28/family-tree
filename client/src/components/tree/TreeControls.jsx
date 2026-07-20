@@ -13,7 +13,8 @@ import { useLanguage } from '../../context/LanguageContext';
    ────────────────────────────────────────── */
 export default function TreeControls({
   zoomLevel, onZoomIn, onZoomOut, onReset,
-  memberCount, editMode, onToggleEditMode,
+  memberCount, familyName, editMode, onToggleEditMode,
+  publicView = false,
 }) {
   const { t } = useLanguage();
 
@@ -25,12 +26,16 @@ export default function TreeControls({
       {/* Left — status + count */}
       <div className="flex items-center gap-2 min-w-0">
         <span className="text-[13px] font-bold text-ft-text-1 truncate">
-          {editMode ? t('treeControls.editingTree') : t('treeControls.readOnlyTree')}
+          {publicView && familyName ? familyName : (editMode ? t('treeControls.editingTree') : t('treeControls.familyTree'))}
         </span>
-        <span className="text-[13px] font-bold text-ft-text-3">•</span>
-        <span className="text-[13px] font-bold text-ft-text-1">
-          {memberCount} {memberCount === 1 ? t('treeControls.person') : t('treeControls.people')}
-        </span>
+        {memberCount !== undefined && memberCount !== null && (
+          <>
+            <span className="text-[13px] font-bold text-ft-text-3">•</span>
+            <span className="text-[13px] font-bold text-ft-text-1">
+              {memberCount} {memberCount === 1 ? t('treeControls.person') : t('treeControls.people')}
+            </span>
+          </>
+        )}
       </div>
 
       {/* Right — hints + compact controls */}

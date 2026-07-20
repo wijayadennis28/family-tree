@@ -34,4 +34,9 @@ class Branch extends Model
     {
         return $this->hasMany(FamilyMember::class);
     }
+
+    public function activeMembers(): HasMany
+    {
+        return $this->hasMany(FamilyMember::class)->where('is_active', true);
+    }
 }

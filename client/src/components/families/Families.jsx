@@ -1,18 +1,21 @@
 import { useEffect, useState, useContext, useCallback, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import {
-  Plus, Spinner, TreeStructure, Users, Tree, UserPlus, Check,
-  Pencil, Trash, X, DotsThreeVertical, House, GitBranch
+  Plus, Spinner, TreeStructure, Users, UserPlus, Check,
+  Pencil, Trash, X, DotsThreeVertical, House, GitBranch,
+  ShareNetwork,
 } from '@phosphor-icons/react';
 import { useApi } from '../../hooks/useApi';
 import { AuthContext } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { buildTreeUrl } from '../../utils/treeUrl';
+import { buildFamilyTreeUrl, buildPublicFamilyTreeUrl } from '../../utils/treeUrl';
+
 
 // ── Reusable modal shell ─────────────────────────────────────────
 function Modal({ title, onClose, children }) {
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm animate-[fade-in_150ms_ease-out]">
       <div className="bg-white rounded-2xl shadow-ft-lg w-full max-w-md overflow-hidden animate-[modal-pop-in_200ms_ease-out]">
         <div className="flex items-center justify-between p-5 border-b border-slate-100">
@@ -23,7 +26,8 @@ function Modal({ title, onClose, children }) {
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -237,7 +241,6 @@ function FamilyActionsMenu({ onEdit, onDelete }) {
 export default function Families() {
   const api = useApi();
   const toast = useToast();
-  const navigate = useNavigate();
   const { t } = useLanguage();
   const { hasAbility, activeFamily, setActiveFamily, refreshUser } = useContext(AuthContext);
 
@@ -365,15 +368,6 @@ export default function Families() {
   const handleSelect = (family) => {
     setActiveFamily(family);
     toast.addToast(t('families.activeFamily', { name: family.name }), 'success');
-  };
-
-  const handleViewAtlas = (family) => {
-    const first = family.members?.[0] || family.branches?.[0]?.members?.[0];
-    if (first) {
-      navigate(buildTreeUrl(first));
-    } else {
-      toast.addToast(t('families.noMembersError'), 'error');
-    }
   };
 
   const isActive = (family) => activeFamily?.id === family.id;
@@ -523,18 +517,21 @@ export default function Families() {
                   >
                     <UserPlus /> {t('people.addMember')}
                   </Link>
-                  <button
-                    onClick={() => handleViewAtlas(family)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-ft-text-2 text-xs font-bold hover:bg-ft-accent-light hover:text-ft-accent hover:border-ft-accent transition-colors"
-                  >
-                    <Tree /> {t('common.tree')}
-                  </button>
                   <Link
-                    to={`/families/${family.id}/tree`}
+                    to={buildFamilyTreeUrl(family)}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-ft-text-2 text-xs font-bold no-underline hover:bg-ft-accent-light hover:text-ft-accent hover:border-ft-accent transition-colors"
                   >
                     <TreeStructure /> {t('families.familyTree')}
                   </Link>
+                  <button
+                    onClick={() => {
+                      const url = `${window.location.origin}${buildPublicFamilyTreeUrl(family)}`;
+                      navigator.clipboard.writeText(url).then(() => toast.addToast(t('families.publicLinkCopied'), 'success'));
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-ft-text-2 text-xs font-bold hover:bg-ft-accent-light hover:text-ft-accent hover:border-ft-accent transition-colors"
+                  >
+                    <ShareNetwork /> {t('families.publicLink')}
+                  </button>
                   <Link
                     to={`/families/${family.id}/branches`}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-ft-text-2 text-xs font-bold no-underline hover:bg-ft-accent-light hover:text-ft-accent hover:border-ft-accent transition-colors"

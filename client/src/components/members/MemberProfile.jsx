@@ -9,6 +9,7 @@ import {
   Image,
   Camera,
   Spinner,
+  Trash,
 } from '@phosphor-icons/react';
 import SegmentedControl from '../ui/SegmentedControl';
 import { useApi } from '../../hooks/useApi';
@@ -16,7 +17,9 @@ import { useToast } from '../../context/ToastContext';
 import { AuthContext } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { STORAGE_URL } from '../../utils/storageUrl';
-import { buildTreeUrl } from '../../utils/treeUrl';
+import { getMemberInitials } from '../../utils/initials';
+import { getLivingStatus } from '../../utils/livingStatus';
+import { buildTreeUrl, buildMemberUrl, parseHybridSlug } from '../../utils/treeUrl';
 import { getRelIcon, getRelTypeKey } from '../../utils/relationshipIcons';
 
 /* ──────────────────────────────────────────
@@ -50,7 +53,8 @@ function InfoRow({ label, value }) {
    Full-page member profile — Framer-style.
    ────────────────────────────────────────── */
 export default function MemberProfile() {
-  const { id } = useParams();
+  const { slug } = useParams();
+  const id = parseHybridSlug(slug);
   const api = useApi();
   const toast = useToast();
   const navigate = useNavigate();
@@ -84,7 +88,7 @@ export default function MemberProfile() {
     fd.append('photo', file);
 
     setUploadingPhoto(true);
-    const [data, err] = await api.upload(`/members/${id}`, fd);
+    const [data, err] = await api.upload(`/members/${id}`, fd, 'put');
     setUploadingPhoto(false);
 
     if (err) {
@@ -97,6 +101,22 @@ export default function MemberProfile() {
     if (photoInputRef.current) photoInputRef.current.value = '';
   };
 
+  const handlePhotoRemove = async () => {
+    if (!canEdit || !member?.photo) return;
+    if (!window.confirm(t('memberProfile.photoRemoveConfirm', { name: member.name }))) return;
+
+    setUploadingPhoto(true);
+    const [data, err] = await api.put(`/members/${id}`, { remove_photo: true });
+    setUploadingPhoto(false);
+
+    if (err) {
+      toast.addToast(typeof err === 'string' ? err : t('memberProfile.photoRemoveError'), 'error');
+    } else {
+      setMember(data);
+      toast.addToast(t('memberProfile.photoRemoved'), 'success');
+    }
+  };
+
   const [member, setMember] = useState(null);
   const [relationships, setRelationships] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -107,6 +127,7 @@ export default function MemberProfile() {
   // Page-level fade-in is now handled by the global PageTransition wrapper.
 
   useEffect(() => {
+    if (!id) return;
     const load = async () => {
       setLoading(true);
       setError(null);
@@ -119,6 +140,16 @@ export default function MemberProfile() {
     };
     load();
   }, [id, api, t]);
+
+  if (!id) {
+    return (
+      <div className="max-w-5xl mx-auto px-6 py-10">
+        <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4 text-sm">
+          {t('memberProfile.notFound')}
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -139,15 +170,9 @@ export default function MemberProfile() {
     );
   }
 
-  const isDeceased = !!member.dod;
-  const initials = member.name
-    ? member.name
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .slice(0, 2)
-        .toUpperCase()
-    : '?';
+  const status = getLivingStatus(member);
+  const isDeceased = status === 'deceased';
+  const initials = getMemberInitials(member);
 
   const formatYear = (dateStr) => {
     if (!dateStr) return null;
@@ -173,7 +198,7 @@ export default function MemberProfile() {
     String(rel.member1_id) === String(member.id) ? rel.member2 : rel.member1;
 
   const relationshipLabel = (() => {
-    if (relationships.length === 0) return t('memberProfile.familyMember');
+    if (relationships.length === 0) return null;
     if (relationships.length === 1) {
       const other = getOtherMember(relationships[0]);
       return t('memberProfile.relationshipOf', {
@@ -227,57 +252,72 @@ export default function MemberProfile() {
             {/* Hero card */}
             <div className="bg-white border border-slate-200 rounded-2xl p-6 md:p-8 shadow-ft-sm">
               <div className="flex flex-col sm:flex-row items-start gap-5">
-                <button
-                  type="button"
-                  aria-label={t('memberProfile.changePhoto')}
-                  onClick={() => photoInputRef.current?.click()}
-                  disabled={uploadingPhoto || !canEdit}
-                  className={`relative group w-24 h-24 md:w-28 md:h-28 rounded-full flex items-center justify-center text-3xl md:text-4xl font-bold border-4 overflow-hidden flex-shrink-0 disabled:cursor-not-allowed ${
-                    canEdit ? 'cursor-pointer' : 'cursor-not-allowed opacity-80'
-                  } ${
-                    isDeceased
-                      ? 'bg-slate-100 text-ft-text-3 border-slate-200'
-                      : 'bg-ft-accent-light text-ft-accent border-ft-accent/20'
-                  }`}
-                >
-                  {member.photo ? (
-                    <img
-                      src={`${STORAGE_URL}/${member.photo}`}
-                      alt={member.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    initials
+                <div className="flex flex-col items-center gap-2 flex-shrink-0">
+                  <button
+                    type="button"
+                    aria-label={t('memberProfile.changePhoto')}
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={uploadingPhoto || !canEdit}
+                    className={`relative group w-24 h-24 md:w-28 md:h-28 rounded-full flex items-center justify-center text-3xl md:text-4xl font-bold border-4 overflow-hidden disabled:cursor-not-allowed ${
+                      canEdit ? 'cursor-pointer' : 'cursor-not-allowed opacity-80'
+                    } ${
+                      isDeceased
+                        ? 'bg-slate-100 text-ft-text-3 border-slate-200'
+                        : 'bg-ft-accent-light text-ft-accent border-ft-accent/20'
+                    }`}
+                  >
+                    {member.photo ? (
+                      <img
+                        src={`${STORAGE_URL}/${member.photo}`}
+                        alt={member.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      initials
+                    )}
+                    {canEdit && (
+                      <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        {uploadingPhoto ? (
+                          <Spinner className="text-white text-xl animate-spin" />
+                        ) : (
+                          <Camera className="text-white text-xl" />
+                        )}
+                      </div>
+                    )}
+                  </button>
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    onChange={handlePhotoSelect}
+                    className="hidden"
+                  />
+                  {canEdit && member?.photo && (
+                    <button
+                      type="button"
+                      onClick={handlePhotoRemove}
+                      disabled={uploadingPhoto}
+                      aria-label={t('memberProfile.photoRemoveConfirm', { name: member.name })}
+                      className="flex items-center gap-1 text-[0.7rem] font-semibold text-ft-text-3 hover:text-red-500 disabled:opacity-50 disabled:cursor-not-allowed bg-transparent border-none p-0 cursor-pointer transition-colors"
+                    >
+                      <Trash size={12} /> {t('common.remove')}
+                    </button>
                   )}
-                  {canEdit && (
-                    <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                      {uploadingPhoto ? (
-                        <Spinner className="text-white text-xl animate-spin" />
-                      ) : (
-                        <Camera className="text-white text-xl" />
-                      )}
-                    </div>
-                  )}
-                </button>
-                <input
-                  ref={photoInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/gif,image/webp"
-                  onChange={handlePhotoSelect}
-                  className="hidden"
-                />
+                </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2 mb-2">
                     <span className="px-2.5 py-1 rounded-full bg-ft-accent-light text-ft-accent text-[0.7rem] font-bold">
                       {t('memberProfile.memberProfile')}
                     </span>
-                    <span
-                      title={relationshipLabel}
-                      className="px-2.5 py-1 rounded-full bg-ft-surface-2 text-ft-text-2 text-[0.7rem] font-bold truncate max-w-[180px]"
-                    >
-                      {relationshipLabel}
-                    </span>
+                    {relationshipLabel && (
+                      <span
+                        title={relationshipLabel}
+                        className="px-2.5 py-1 rounded-full bg-ft-surface-2 text-ft-text-2 text-[0.7rem] font-bold truncate max-w-[180px]"
+                      >
+                        {relationshipLabel}
+                      </span>
+                    )}
                   </div>
                   <h1 className="text-2xl md:text-3xl font-extrabold text-ft-text-1 tracking-tight mb-1">
                     {member.name}
@@ -308,15 +348,13 @@ export default function MemberProfile() {
                   {relationships.map((rel) => {
                     const other = getOtherMember(rel);
                     if (!other) return null;
-                    const otherInitials = other.name
-                      ? other.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
-                      : '?';
+                    const otherInitials = getMemberInitials(other);
                     return (
-                      <Link
-                        key={rel.id}
-                        to={`/people/${other.id}`}
-                        className="flex items-center gap-4 p-4 bg-ft-surface-2 border border-slate-200 rounded-2xl hover:shadow-ft-sm hover:border-ft-accent/30 transition-all duration-200 no-underline"
-                      >
+                  <Link
+                    key={rel.id}
+                    to={buildMemberUrl(other)}
+                    className="flex items-center gap-4 p-4 bg-ft-surface-2 border border-slate-200 rounded-2xl hover:shadow-ft-sm hover:border-ft-accent/30 transition-all duration-200 no-underline"
+                  >
                         <div className="w-12 h-12 rounded-full bg-ft-accent-light text-ft-accent flex items-center justify-center text-sm font-bold border-2 border-ft-accent/20 flex-shrink-0">
                           {other.photo ? (
                             <img
@@ -408,7 +446,7 @@ export default function MemberProfile() {
             </Link>
 
             <Link
-              to={`/people/${id}/edit`}
+              to={`${buildMemberUrl(member)}/edit`}
               className="flex items-center justify-center gap-2 w-full py-3 rounded-lg border border-slate-200 text-ft-text-2 font-bold text-sm no-underline hover:bg-ft-accent-light hover:text-ft-accent hover:border-ft-accent transition-all duration-150"
             >
               {t('memberProfile.editProfile')}

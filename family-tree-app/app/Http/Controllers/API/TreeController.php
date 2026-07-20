@@ -22,11 +22,11 @@ class TreeController extends Controller
         $member = FamilyMember::findOrFail($memberId);
         $familyId = $this->resolveFamilyId($request);
 
-        if (!$this->canAccessMemberInFamily($request->user(), $member, $familyId)) {
+        if (! $this->canAccessMemberInFamily($request->user(), $member, $familyId)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $depth     = min((int) ($request->query('depth', 3)), 6);
+        $depth = min((int) ($request->query('depth', 3)), 6);
         $ancestors = min((int) ($request->query('ancestors', 2)), 4);
 
         $tree = $this->buildNode($member, $depth, $ancestors, 0, [], $familyId);
@@ -43,7 +43,7 @@ class TreeController extends Controller
         $member = FamilyMember::findOrFail($memberId);
         $familyId = $this->resolveFamilyId($request);
 
-        if (!$this->canAccessMemberInFamily($request->user(), $member, $familyId)) {
+        if (! $this->canAccessMemberInFamily($request->user(), $member, $familyId)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
@@ -51,25 +51,42 @@ class TreeController extends Controller
     }
 
     /**
-     * GET /api/families/{familyId}/tree
+     * GET /api/families/{familySlug}/tree
      * Returns the full family tree as an array of nested trees (one per root branch).
+     * Publicly accessible for families marked is_public; authenticated users with
+     * access can also view private families.
      */
-    public function familyTree(Request $request, string $familyId)
+    public function familyTree(Request $request, string $familySlug)
     {
-        $family = \App\Models\Family::findOrFail($familyId);
+        $family = \App\Models\Family::where('slug', $familySlug)->first();
+
+        if (! $family && is_numeric($familySlug)) {
+            $family = \App\Models\Family::where('id', (int) $familySlug)->first();
+        }
+
+        if (! $family) {
+            abort(404);
+        }
+
         $user = $request->user();
 
-        if (!$user->isSuperAdmin()) {
-            $accessibleFamilyIds = $user->familyAccess()->pluck('family_id')->all();
-            if (!in_array((int) $familyId, $accessibleFamilyIds, true)) {
+        if (! $family->is_public) {
+            if (! $user) {
                 return response()->json(['message' => 'Forbidden.'], 403);
+            }
+
+            if (! $user->isSuperAdmin()) {
+                $accessibleFamilyIds = $user->familyAccess()->pluck('family_id')->all();
+                if (! in_array((int) $family->id, $accessibleFamilyIds, true)) {
+                    return response()->json(['message' => 'Forbidden.'], 403);
+                }
             }
         }
 
-        $roots = $this->buildFamilyTreeRoots((int) $familyId);
+        $roots = $this->buildFamilyTreeRoots((int) $family->id);
 
         return response()->json([
-            'family' => ['id' => $family->id, 'name' => $family->name],
+            'family' => ['id' => $family->id, 'name' => $family->name, 'slug' => $family->slug],
             'roots' => $roots,
         ]);
     }
@@ -83,11 +100,12 @@ class TreeController extends Controller
         $member = FamilyMember::findOrFail($memberId);
         $familyId = $this->resolveFamilyId($request);
 
-        if (!$this->canAccessMemberInFamily($request->user(), $member, $familyId)) {
+        if (! $this->canAccessMemberInFamily($request->user(), $member, $familyId)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $depth  = min((int) ($request->query('depth', 3)), 6);
+        $depth = min((int) ($request->query('depth', 3)), 6);
+
         return response()->json($this->buildDescendants($member, $depth, 0, [], $familyId));
     }
 
@@ -102,9 +120,9 @@ class TreeController extends Controller
 
         $visited[] = $member->id;
 
-        $node             = $this->memberData($member);
-        $node['spouses']  = $this->getSpouses($member, $visited, $familyId, $upDepth);
-        $node['parents']  = $upDepth > 0
+        $node = $this->memberData($member);
+        $node['spouses'] = $this->getSpouses($member, $visited, $familyId, $upDepth);
+        $node['parents'] = $upDepth > 0
             ? $this->getParents($member, $upDepth - 1, $visited, $familyId)
             : [];
         $node['children'] = $downDepth > 0
@@ -124,9 +142,9 @@ class TreeController extends Controller
         }
         $visited[] = $member->id;
 
-        $node             = $this->memberData($member);
-        $node['spouses']  = $this->getSpouses($member, $visited, $familyId, 0);
-        $node['parents']  = $this->getParentStubs($member);
+        $node = $this->memberData($member);
+        $node['spouses'] = $this->getSpouses($member, $visited, $familyId, 0);
+        $node['parents'] = $this->getParentStubs($member, $familyId);
         $node['children'] = $depth > 0
             ? $this->getChildren($member, $depth - 1, $visited, $familyId)
             : [];
@@ -136,6 +154,9 @@ class TreeController extends Controller
 
     /**
      * Build a family-wide tree: array of root trees for all disconnected branches.
+     *
+     * Uses connected components so each member appears exactly once. Members with
+     * no relationships become single-node roots.
      */
     public function buildFamilyTreeRoots(int $familyId): array
     {
@@ -148,12 +169,20 @@ class TreeController extends Controller
             return [];
         }
 
-        // Pre-load all parent/child relationships within this family to avoid N+1
+        // Pre-load all relationships within this family to build connected components.
         $memberIds = $members->keys()->all();
         $relationships = Relationship::whereIn('member1_id', $memberIds)
             ->orWhereIn('member2_id', $memberIds)
             ->get();
 
+        // Adjacency list for connected components (Spouse and Parent/Child both connect people).
+        $adj = [];
+        foreach ($relationships as $r) {
+            $adj[$r->member1_id][] = $r->member2_id;
+            $adj[$r->member2_id][] = $r->member1_id;
+        }
+
+        // Build parent lookup for choosing a root inside each component.
         $childToParents = [];
         foreach ($relationships as $r) {
             if ($r->relationship_type === 'Parent') {
@@ -163,29 +192,56 @@ class TreeController extends Controller
             }
         }
 
+        // Find connected components via BFS.
         $visited = [];
-        $roots = [];
-
+        $components = [];
         foreach ($members as $member) {
-            if (in_array($member->id, $visited)) {
+            if (in_array($member->id, $visited, true)) {
                 continue;
             }
 
-            $parentsInFamily = array_filter(
-                $childToParents[$member->id] ?? [],
-                fn($id) => $members->has($id),
-            );
+            $component = [];
+            $queue = [$member->id];
+            $visited[] = $member->id;
 
-            if (empty($parentsInFamily)) {
-                $roots[] = $this->buildDescendantsShared($member, 10, 0, $visited, $familyId);
+            while (! empty($queue)) {
+                $id = array_shift($queue);
+                $component[] = $id;
+
+                foreach ($adj[$id] ?? [] as $neighborId) {
+                    if (! in_array($neighborId, $visited, true) && $members->has($neighborId)) {
+                        $visited[] = $neighborId;
+                        $queue[] = $neighborId;
+                    }
+                }
             }
+
+            $components[] = $component;
         }
 
-        // Catch any disconnected members not yet visited
-        foreach ($members as $member) {
-            if (!in_array($member->id, $visited)) {
-                $roots[] = $this->buildDescendantsShared($member, 10, 0, $visited, $familyId);
+        // Build one tree per connected component.
+        $roots = [];
+        $sharedVisited = [];
+
+        foreach ($components as $component) {
+            // Prefer a root with no parents in the family; otherwise use the first member.
+            $rootId = null;
+            foreach ($component as $id) {
+                $parentsInFamily = array_filter(
+                    $childToParents[$id] ?? [],
+                    fn ($pid) => $members->has($pid),
+                );
+                if (empty($parentsInFamily)) {
+                    $rootId = $id;
+                    break;
+                }
             }
+
+            if (! $rootId) {
+                $rootId = $component[0];
+            }
+
+            $roots[] = $this->buildDescendantsShared($members[$rootId], 10, 0, $sharedVisited, $familyId);
         }
 
         return $roots;
@@ -201,9 +257,9 @@ class TreeController extends Controller
         }
         $visited[] = $member->id;
 
-        $node             = $this->memberData($member);
-        $node['spouses']  = $this->getSpouses($member, $visited, $familyId, 0);
-        $node['parents']  = $this->getParentStubs($member);
+        $node = $this->memberData($member);
+        $node['spouses'] = $this->getSpouses($member, $visited, $familyId, 0);
+        $node['parents'] = $this->getParentStubs($member, $familyId);
         $node['children'] = $depth > 0
             ? $this->getChildrenShared($member, $depth - 1, $visited, $familyId)
             : [];
@@ -216,11 +272,21 @@ class TreeController extends Controller
     {
         $childIds = $this->collectChildIds($member, $familyId);
 
+        // Build a map of child_id => member_order from Parent relationships
+        $childOrders = $this->relationsWhereMemberIs('parent', $member)
+            ->get()
+            ->mapWithKeys(fn ($r) => [
+                (int) ($r->member1_id === $member->id ? $r->member2_id : $r->member1_id) => (int) $r->member_order,
+            ]);
+
         return FamilyMember::whereIn('id', $childIds)
             ->where('is_active', true)
             ->when($familyId, fn ($q) => $q->where('family_id', $familyId))
             ->get()
-            ->map(fn($c) => $this->buildDescendantsShared($c, $depth, 0, $visited, $familyId))
+            ->map(fn ($c) => array_merge(
+                $this->buildDescendantsShared($c, $depth, 0, $visited, $familyId),
+                ['child_order' => $childOrders->get((int) $c->id, 0)],
+            ))
             ->values()
             ->toArray();
     }
@@ -235,7 +301,7 @@ class TreeController extends Controller
         }
         $visited[] = $member->id;
 
-        $node            = $this->memberData($member);
+        $node = $this->memberData($member);
         $node['spouses'] = $this->getSpouses($member, $visited, $familyId, 0);
         $node['parents'] = $depth > 0
             ? $this->getParents($member, $depth - 1, $visited, $familyId)
@@ -250,21 +316,22 @@ class TreeController extends Controller
         $spouseRels = Relationship::where('relationship_type', 'Spouse')
             ->where(function ($q) use ($member) {
                 $q->where('member1_id', $member->id)
-                  ->orWhere('member2_id', $member->id);
+                    ->orWhere('member2_id', $member->id);
             })
             ->get()
-            ->map(fn($r) => [
+            ->map(fn ($r) => [
                 'spouse_id' => (int) ($r->member1_id === $member->id ? $r->member2_id : $r->member1_id),
-                'rel'       => $r,
+                'rel' => $r,
             ]);
 
         $members = FamilyMember::whereIn('id', $spouseRels->pluck('spouse_id')->unique())
+            ->where('is_active', true)
             ->when($familyId, fn ($q) => $q->where('family_id', $familyId))
             ->get()
             ->keyBy('id');
 
         return $spouseRels
-            ->filter(fn($s) => $members->has($s['spouse_id']))
+            ->filter(fn ($s) => $members->has($s['spouse_id']))
             ->unique('spouse_id')
             ->values()
             ->map(function ($s) use ($members, $visited, $upDepth, $familyId) {
@@ -272,17 +339,19 @@ class TreeController extends Controller
                 $spouse = $members->get($s['spouse_id']);
                 $data = array_merge($this->memberData($spouse), [
                     'relationship' => [
-                        'id'         => $r->id,
-                        'type'       => $r->relationship_type,
-                        'status'     => $r->status,
+                        'id' => $r->id,
+                        'type' => $r->relationship_type,
+                        'member_order' => (int) $r->member_order,
+                        'status' => $r->status,
                         'start_date' => $r->start_date?->format('Y-m-d'),
-                        'end_date'   => $r->end_date?->format('Y-m-d'),
-                        'notes'      => $r->notes,
+                        'end_date' => $r->end_date?->format('Y-m-d'),
+                        'notes' => $r->notes,
                     ],
                     'parents' => $upDepth > 0
                         ? $this->getParents($spouse, $upDepth - 1, $visited, $familyId)
                         : [],
                 ]);
+
                 return $data;
             })
             ->values()
@@ -317,14 +386,15 @@ class TreeController extends Controller
     {
         $parentIds = $this->relationsWhereMemberIs('child', $member)
             ->get()
-            ->map(fn($r) => $r->member1_id === $member->id ? $r->member2_id : $r->member1_id)
+            ->map(fn ($r) => $r->member1_id === $member->id ? $r->member2_id : $r->member1_id)
             ->unique()
             ->values();
 
         $parents = FamilyMember::whereIn('id', $parentIds)
+            ->where('is_active', true)
             ->when($familyId, fn ($q) => $q->where('family_id', $familyId))
             ->get()
-            ->map(fn($p) => $this->buildAncestors($p, $depth, $visited, $familyId))
+            ->map(fn ($p) => $this->buildAncestors($p, $depth, $visited, $familyId))
             ->values()
             ->toArray();
 
@@ -333,10 +403,10 @@ class TreeController extends Controller
         // other parent card — drop them here so the UI doesn't render two of each.
         $parentIdSet = array_flip(array_column($parents, 'id'));
         foreach ($parents as &$parent) {
-            if (!empty($parent['spouses'])) {
+            if (! empty($parent['spouses'])) {
                 $parent['spouses'] = array_values(array_filter(
                     $parent['spouses'],
-                    fn($s) => !isset($parentIdSet[$s['id']]),
+                    fn ($s) => ! isset($parentIdSet[$s['id']]),
                 ));
             }
         }
@@ -346,16 +416,30 @@ class TreeController extends Controller
     }
 
     /** Lightweight parent ids for layout co-parent routing */
-    private function getParentStubs(FamilyMember $member): array
+    private function getParentStubs(FamilyMember $member, ?int $familyId = null): array
     {
-        return $this->relationsWhereMemberIs('child', $member)
+        $parentIds = $this->relationsWhereMemberIs('child', $member)
             ->get()
-            ->map(fn($r) => [
-                'id' => (int) ($r->member1_id === $member->id ? $r->member2_id : $r->member1_id),
-            ])
-            ->unique('id')
-            ->values()
-            ->toArray();
+            ->map(fn ($r) => (int) ($r->member1_id === $member->id ? $r->member2_id : $r->member1_id))
+            ->unique()
+            ->values();
+
+        if ($familyId) {
+            $parentIds = FamilyMember::whereIn('id', $parentIds)
+                ->where('family_id', $familyId)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values();
+        }
+
+        $parents = FamilyMember::whereIn('id', $parentIds)
+            ->get()
+            ->keyBy('id');
+
+        return $parentIds->map(fn ($id) => $parents[$id]
+            ? $this->memberData($parents[$id])
+            : ['id' => $id]
+        )->values()->toArray();
     }
 
     /** Returns children of a member (includes spouse's children for the couple union). */
@@ -363,11 +447,21 @@ class TreeController extends Controller
     {
         $childIds = $this->collectChildIds($member, $familyId);
 
+        // Build a map of child_id => member_order from Parent relationships
+        $childOrders = $this->relationsWhereMemberIs('parent', $member)
+            ->get()
+            ->mapWithKeys(fn ($r) => [
+                (int) ($r->member1_id === $member->id ? $r->member2_id : $r->member1_id) => (int) $r->member_order,
+            ]);
+
         return FamilyMember::whereIn('id', $childIds)
             ->where('is_active', true)
             ->when($familyId, fn ($q) => $q->where('family_id', $familyId))
             ->get()
-            ->map(fn($c) => $this->buildDescendants($c, $depth, 0, $visited, $familyId))
+            ->map(fn ($c) => array_merge(
+                $this->buildDescendants($c, $depth, 0, $visited, $familyId),
+                ['child_order' => $childOrders->get((int) $c->id, 0)],
+            ))
             ->values()
             ->toArray();
     }
@@ -377,25 +471,25 @@ class TreeController extends Controller
     {
         $ids = $this->relationsWhereMemberIs('parent', $member)
             ->get()
-            ->map(fn($r) => $r->member1_id === $member->id ? $r->member2_id : $r->member1_id);
+            ->map(fn ($r) => $r->member1_id === $member->id ? $r->member2_id : $r->member1_id);
 
         $spouseIds = Relationship::where('relationship_type', 'Spouse')
             ->where(function ($q) use ($member) {
                 $q->where('member1_id', $member->id)
-                  ->orWhere('member2_id', $member->id);
+                    ->orWhere('member2_id', $member->id);
             })
             ->get()
-            ->map(fn($r) => $r->member1_id === $member->id ? $r->member2_id : $r->member1_id);
+            ->map(fn ($r) => $r->member1_id === $member->id ? $r->member2_id : $r->member1_id);
 
         foreach ($spouseIds as $spouseId) {
             $spouse = FamilyMember::when($familyId, fn ($q) => $q->where('family_id', $familyId))->find($spouseId);
-            if (!$spouse) {
+            if (! $spouse) {
                 continue;
             }
             $ids = $ids->merge(
                 $this->relationsWhereMemberIs('parent', $spouse)
                     ->get()
-                    ->map(fn($r) => $r->member1_id === $spouse->id ? $r->member2_id : $r->member1_id)
+                    ->map(fn ($r) => $r->member1_id === $spouse->id ? $r->member2_id : $r->member1_id)
             );
         }
 
@@ -427,11 +521,11 @@ class TreeController extends Controller
         // If no family context provided, use the member's family.
         $effectiveFamilyId = $familyId ?? (int) $member->family_id;
 
-        if (!$effectiveFamilyId) {
+        if (! $effectiveFamilyId) {
             return false;
         }
 
-        if (!in_array($effectiveFamilyId, $accessibleFamilyIds, true)) {
+        if (! in_array($effectiveFamilyId, $accessibleFamilyIds, true)) {
             return false;
         }
 
@@ -442,18 +536,18 @@ class TreeController extends Controller
     private function memberData(FamilyMember $member): array
     {
         return [
-            'id'             => $member->id,
-            'name'           => $member->name,
-            'chinese_name'   => $member->chinese_name,
-            'gender'         => $member->gender,
-            'dob'            => $member->dob?->format('Y'),
-            'dod'            => $member->dod?->format('Y'),
-            'is_living'      => is_null($member->dod),
-            'photo'          => $member->photo
-                                    ? asset('storage/' . $member->photo)
-                                    : null,
-            'biography'      => $member->biography,
+            'id' => $member->id,
+            'name' => $member->name,
+            'chinese_name' => $member->chinese_name,
+            'initials' => $member->initials,
+            'gender' => $member->gender,
+            'dob' => $member->dob?->format('Y'),
+            'dod' => $member->dod?->format('Y'),
+            'is_living' => is_null($member->dod),
+            'photo' => $member->photo,
+            'biography' => $member->biography,
             'place_of_birth' => $member->place_of_birth,
+            'family_id' => $member->family_id,
         ];
     }
 }

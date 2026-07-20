@@ -2,14 +2,14 @@ import { useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { Tree, SignOut } from '@phosphor-icons/react';
+import { Tree, SignOut, List } from '@phosphor-icons/react';
 import LanguageSwitcher from '../ui/LanguageSwitcher';
 
 /* ──────────────────────────────────────────
    Top app bar — white 64px, gradient brand
    tile + "Family Atlas" + workspace subtitle.
    ────────────────────────────────────────── */
-export default function Header() {
+export default function Header({ onMenuToggle }) {
   const { user, logout, token } = useContext(AuthContext);
   const navigate = useNavigate();
   const { t } = useLanguage();
@@ -45,8 +45,15 @@ export default function Header() {
         </span>
       </Link>
 
-      {/* Right — user + logout */}
+      {/* Right — mobile menu + user + logout */}
       <div className="flex items-center gap-2 md:gap-3">
+        <button
+          onClick={onMenuToggle}
+          aria-label={t('header.menu')}
+          className="md:hidden w-9 h-9 flex items-center justify-center rounded-lg text-ft-text-2 hover:text-ft-accent hover:bg-ft-rail-active active:scale-[0.95] transition-all"
+        >
+          <List className="text-xl" />
+        </button>
         <div className="flex items-center gap-2.5 px-1 py-1 rounded-xl transition-colors duration-200 cursor-default hover:bg-ft-surface-2">
           <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-ft-accent text-white flex items-center justify-center text-xs font-bold shadow-ft-sm">
             {initials}

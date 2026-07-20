@@ -6,11 +6,13 @@ import { useToast } from '../../context/ToastContext';
 import { AuthContext } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { STORAGE_URL } from '../../utils/storageUrl';
+import { getMemberInitials } from '../../utils/initials';
+import { parseHybridSlug } from '../../utils/treeUrl';
 import RelationshipManager from './RelationshipManager';
 import SegmentedControl from '../ui/SegmentedControl';
 
 const EMPTY = {
-  name: '', chinese_name: '', gender: 'Male',
+  name: '', chinese_name: '', initials: '', gender: 'Male',
   dob: '', dod: '', address: '', phone: '',
   email: '', biography: '', place_of_birth: '', place_of_death: '',
   photo: '', is_active: true,
@@ -43,7 +45,8 @@ export default function MemberForm() {
   const canEdit = hasAbility('edit_member', activeFamily?.id);
   const canManageRelationships = hasAbility('manage_relationships', activeFamily?.id);
   const activeFamilyName = activeFamily?.name || 'No active family';
-  const { id }   = useParams();
+  const { slug } = useParams();
+  const id = parseHybridSlug(slug);
   const api      = useApi();
   const navigate = useNavigate();
   const toast    = useToast();
@@ -108,6 +111,16 @@ export default function MemberForm() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  if (slug && !id) {
+    return (
+      <div className="max-w-5xl mx-auto px-6 py-10">
+        <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg p-4 text-sm font-semibold">
+          {t('memberForm.notFound')}
+        </div>
+      </div>
+    );
+  }
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setForm(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
@@ -127,13 +140,13 @@ export default function MemberForm() {
       fd.append('photo', photoFile);
 
       const [, err] = id
-        ? await api.upload(`/members/${id}`, fd)
+        ? await api.upload(`/members/${id}`, fd, 'put')
         : await api.upload('/members', fd);
 
       if (err) { const msg = typeof err === 'string' ? err : 'Save failed.'; setError(msg); toast.addToast(msg, 'error'); }
       else { toast.addToast(id ? 'Person updated!' : 'Person added!', 'success'); navigate('/people'); }
     } else if (photoFile === false) {
-      const payload = { ...form, photo: '' };
+      const payload = id ? { ...form, remove_photo: true } : { ...form, photo: '' };
       const [, err] = id
         ? await api.put(`/members/${id}`, payload)
         : await api.post('/members', payload);
@@ -168,9 +181,7 @@ export default function MemberForm() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const initials = form.name
-    ? form.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-    : '?';
+  const initials = getMemberInitials(form);
   const avatarSrc = photoFile === false
     ? null
     : (photoPreview || (form.photo ? `${STORAGE_URL}/${form.photo}` : null));
@@ -278,6 +289,10 @@ export default function MemberForm() {
                       <Field label={t('memberForm.chineseName')} htmlFor="chinese_name">
                         <input id="chinese_name" name="chinese_name" type="text" value={form.chinese_name}
                           onChange={handleChange} placeholder={t('memberForm.placeholderChineseName')} className={inputClass} />
+                      </Field>
+                      <Field label={t('memberForm.initials')} htmlFor="initials">
+                        <input id="initials" name="initials" type="text" value={form.initials || ''}
+                          onChange={handleChange} placeholder={t('memberForm.placeholderInitials')} className={inputClass} maxLength={10} />
                       </Field>
                       <Field label={`${t('memberForm.gender')} *`} htmlFor="gender">
                         <select id="gender" name="gender" value={form.gender} onChange={handleChange} className={inputClass}>

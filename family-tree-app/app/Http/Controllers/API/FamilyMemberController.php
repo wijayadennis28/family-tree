@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\FamilyMember;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class FamilyMemberController extends Controller
@@ -24,8 +25,8 @@ class FamilyMemberController extends Controller
         if ($search = $request->query('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('family_members.name', 'like', "%{$search}%")
-                  ->orWhere('family_members.chinese_name', 'like', "%{$search}%")
-                  ->orWhere('families.name', 'like', "%{$search}%");
+                    ->orWhere('family_members.chinese_name', 'like', "%{$search}%")
+                    ->orWhere('families.name', 'like', "%{$search}%");
             });
         }
 
@@ -57,39 +58,40 @@ class FamilyMemberController extends Controller
         $user = $request->user();
 
         $validated = $request->validate([
-            'name'           => 'required|string|max:100',
-            'chinese_name'   => 'nullable|string|max:100',
-            'gender'         => 'required|in:Male,Female,Other',
-            'dob'            => 'nullable|date',
-            'dod'            => 'nullable|date|after_or_equal:dob',
-            'address'        => 'nullable|string',
-            'phone'          => 'nullable|string|max:20',
-            'email'          => 'nullable|email|max:100',
-            'biography'      => 'nullable|string',
+            'name' => 'required|string|max:100',
+            'chinese_name' => 'nullable|string|max:100',
+            'initials' => 'nullable|string|max:10',
+            'gender' => 'required|in:Male,Female,Other',
+            'dob' => 'nullable|date',
+            'dod' => 'nullable|date|after_or_equal:dob',
+            'address' => 'nullable|string',
+            'phone' => 'nullable|string|max:20',
+            'email' => 'nullable|email|max:100',
+            'biography' => 'nullable|string',
             'place_of_birth' => 'nullable|string|max:100',
             'place_of_death' => 'nullable|string|max:100',
-            'family_id'      => 'required|exists:families,id',
-            'branch_id'      => 'nullable|exists:branches,id',
+            'family_id' => 'required|exists:families,id',
+            'branch_id' => 'nullable|exists:branches,id',
         ], [
             'family_id.required' => 'Please select a family.',
-            'family_id.exists'   => 'The selected family does not exist.',
+            'family_id.exists' => 'The selected family does not exist.',
         ]);
 
         $familyId = (int) $validated['family_id'];
-        $branchId = !empty($validated['branch_id']) ? (int) $validated['branch_id'] : null;
+        $branchId = ! empty($validated['branch_id']) ? (int) $validated['branch_id'] : null;
 
-        if (!$this->canAccessFamily($user, $familyId)) {
+        if (! $this->canAccessFamily($user, $familyId)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        if (!$user->isSuperAdmin() && !$user->hasAbility($familyId, 'add_member')) {
+        if (! $user->isSuperAdmin() && ! $user->hasAbility($familyId, 'add_member')) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
         // Ensure branch belongs to the family (branch is optional).
         if ($branchId) {
             $branch = Branch::where('id', $branchId)->where('family_id', $familyId)->first();
-            if (!$branch) {
+            if (! $branch) {
                 return response()->json(['message' => 'Branch does not belong to the selected family.'], 422);
             }
         }
@@ -114,7 +116,7 @@ class FamilyMemberController extends Controller
     {
         $member = FamilyMember::with(['family', 'branch'])->findOrFail($id);
 
-        if (!$this->canAccessMember($request->user(), $member)) {
+        if (! $this->canAccessMember($request->user(), $member)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
@@ -127,29 +129,31 @@ class FamilyMemberController extends Controller
         $user = $request->user();
         $member = FamilyMember::findOrFail($id);
 
-        if (!$this->canAccessMember($user, $member)) {
+        if (! $this->canAccessMember($user, $member)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        if (!$user->isSuperAdmin() && !$user->hasAbility((int) $member->family_id, 'edit_member')) {
+        if (! $user->isSuperAdmin() && ! $user->hasAbility((int) $member->family_id, 'edit_member')) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
         $validated = $request->validate([
-            'name'           => 'sometimes|string|max:100',
-            'chinese_name'   => 'nullable|string|max:100',
-            'gender'         => 'sometimes|in:Male,Female,Other',
-            'dob'            => 'nullable|date',
-            'dod'            => 'nullable|date',
-            'address'        => 'nullable|string',
-            'phone'          => 'nullable|string|max:20',
-            'email'          => 'nullable|email|max:100',
-            'biography'      => 'nullable|string',
+            'name' => 'sometimes|string|max:100',
+            'chinese_name' => 'nullable|string|max:100',
+            'initials' => 'nullable|string|max:10',
+            'gender' => 'sometimes|in:Male,Female,Other',
+            'dob' => 'nullable|date',
+            'dod' => 'nullable|date',
+            'address' => 'nullable|string',
+            'phone' => 'nullable|string|max:20',
+            'email' => 'nullable|email|max:100',
+            'biography' => 'nullable|string',
             'place_of_birth' => 'nullable|string|max:100',
             'place_of_death' => 'nullable|string|max:100',
-            'is_active'      => 'sometimes|boolean',
-            'family_id'      => 'nullable|exists:families,id',
-            'branch_id'      => 'nullable|exists:branches,id',
+            'is_active' => 'sometimes|boolean',
+            'family_id' => 'nullable|exists:families,id',
+            'branch_id' => 'nullable|exists:branches,id',
+            'remove_photo' => 'sometimes|boolean',
         ]);
 
         // Handle photo upload (replace old)
@@ -161,9 +165,17 @@ class FamilyMemberController extends Controller
             $validated['photo'] = $request->file('photo')->store('member-photos', 'public');
         }
 
-        $familyId = !empty($validated['family_id']) ? (int) $validated['family_id'] : null;
+        // Handle explicit photo removal
+        if (! empty($validated['remove_photo'])) {
+            if ($member->photo) {
+                Storage::disk('public')->delete($member->photo);
+            }
+            $validated['photo'] = null;
+        }
+
+        $familyId = ! empty($validated['family_id']) ? (int) $validated['family_id'] : null;
         $branchId = array_key_exists('branch_id', $validated)
-            ? (!empty($validated['branch_id']) ? (int) $validated['branch_id'] : null)
+            ? (! empty($validated['branch_id']) ? (int) $validated['branch_id'] : null)
             : null;
 
         // Validate family/branch consistency.
@@ -171,17 +183,17 @@ class FamilyMemberController extends Controller
             $familyId = $familyId ?? $member->family_id;
             $branchId = array_key_exists('branch_id', $validated) ? $branchId : $member->branch_id;
 
-            if (!$familyId) {
+            if (! $familyId) {
                 return response()->json(['message' => 'Family is required.'], 422);
             }
 
-            if (!$this->canAccessFamily($user, $familyId)) {
+            if (! $this->canAccessFamily($user, $familyId)) {
                 return response()->json(['message' => 'Forbidden.'], 403);
             }
 
             if ($branchId) {
                 $branch = Branch::where('id', $branchId)->where('family_id', $familyId)->first();
-                if (!$branch) {
+                if (! $branch) {
                     return response()->json(['message' => 'Branch does not belong to the selected family.'], 422);
                 }
             }
@@ -201,15 +213,23 @@ class FamilyMemberController extends Controller
         $user = $request->user();
         $member = FamilyMember::findOrFail($id);
 
-        if (!$this->canAccessMember($user, $member)) {
+        if (! $this->canAccessMember($user, $member)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        if (!$user->isSuperAdmin() && !$user->hasAbility((int) $member->family_id, 'delete_member')) {
+        if (! $user->isSuperAdmin() && ! $user->hasAbility((int) $member->family_id, 'delete_member')) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $member->update(['is_active' => false]);
+        // Remove all relationships involving this member so that archived members
+        // do not leave stale spouse/parent/child rows behind.
+        DB::transaction(function () use ($member) {
+            \App\Models\Relationship::where('member1_id', $member->id)
+                ->orWhere('member2_id', $member->id)
+                ->delete();
+
+            $member->update(['is_active' => false]);
+        });
 
         return response()->json(['message' => 'Member archived successfully']);
     }
@@ -219,7 +239,7 @@ class FamilyMemberController extends Controller
     {
         $member = FamilyMember::findOrFail($id);
 
-        if (!$this->canAccessMember($request->user(), $member)) {
+        if (! $this->canAccessMember($request->user(), $member)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
@@ -245,31 +265,33 @@ class FamilyMemberController extends Controller
         $user = $request->user();
         $member = FamilyMember::findOrFail($id);
 
-        if (!$this->canAccessMember($user, $member)) {
+        if (! $this->canAccessMember($user, $member)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
         $validated = $request->validate([
-            'member2_id'        => 'nullable|exists:family_members,id',
-            'parent_id'         => 'nullable|exists:family_members,id',
-            'child_id'          => 'nullable|exists:family_members,id',
+            'member2_id' => 'nullable|exists:family_members,id',
+            'parent_id' => 'nullable|exists:family_members,id',
+            'child_id' => 'nullable|exists:family_members,id',
             'relationship_type' => 'required|in:Parent,Child,Spouse,Sibling,Grandparent,Grandchild,Uncle/Aunt,Niece/Nephew',
-            'status'            => 'nullable|in:Married,Divorced,Separated,Widowed,Annulled',
-            'start_date'        => 'nullable|date',
-            'end_date'          => 'nullable|date',
-            'notes'             => 'nullable|string',
+            'member_order' => 'nullable|integer|min:0|max:255',
+            'status' => 'nullable|in:Married,Divorced,Separated,Widowed,Annulled',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date',
+            'notes' => 'nullable|string',
         ]);
 
         // non-directional types (Spouse, Sibling, etc.) still need member2_id
-        if (!in_array($validated['relationship_type'], ['Parent', 'Child'], true)
+        if (! in_array($validated['relationship_type'], ['Parent', 'Child'], true)
             && empty($validated['member2_id'])
         ) {
             return response()->json([
-                'message' => 'member2_id is required for ' . $validated['relationship_type'] . ' relationships.',
+                'message' => 'member2_id is required for '.$validated['relationship_type'].' relationships.',
             ], 422);
         }
 
         $member1Id = $id;
+        $member2Id = (int) ($validated['member2_id'] ?? 0);
 
         // Directional Parent/Child writes. Strict — client must declare
         // who-is-who via parent_id + child_id, else 422.
@@ -280,14 +302,25 @@ class FamilyMemberController extends Controller
                 ], 422);
             }
             $parentId = (int) $validated['parent_id'];
-            $childId  = (int) $validated['child_id'];
+            $childId = (int) $validated['child_id'];
             if ($parentId === $childId) {
                 return response()->json(['message' => 'parent_id and child_id must differ.'], 422);
             }
             // type=Parent → M1 = parent, M2 = child. type=Child → M1 = child, M2 = parent.
-            [$member1Id, $validated['member2_id']] = $validated['relationship_type'] === 'Parent'
+            [$member1Id, $member2Id] = $validated['relationship_type'] === 'Parent'
                 ? [$parentId, $childId]
                 : [$childId, $parentId];
+            $validated['member2_id'] = $member2Id;
+        }
+
+        // Prevent self-relationships for non-directional types.
+        if (! in_array($validated['relationship_type'], ['Parent', 'Child'], true) && $member1Id === $member2Id) {
+            return response()->json(['message' => 'A member cannot be related to themselves.'], 422);
+        }
+
+        // Ensure both members belong to the same family and the user can access it.
+        if (! $this->canRelateMembers($user, $member1Id, $member2Id)) {
+            return response()->json(['message' => 'Forbidden. Members must be in a shared accessible family.'], 403);
         }
 
         // Canonical ordering for symmetric Spouse rows.
@@ -317,17 +350,23 @@ class FamilyMemberController extends Controller
         // Parent/Child idempotent at the (M1, M2, type) triple.
         $rel = \App\Models\Relationship::firstOrCreate(
             [
-                'member1_id'        => $member1Id,
-                'member2_id'        => $validated['member2_id'],
+                'member1_id' => $member1Id,
+                'member2_id' => $validated['member2_id'],
                 'relationship_type' => $validated['relationship_type'],
             ],
             [
-                'status'    => $validated['status']    ?? null,
+                'member_order' => $validated['member_order'] ?? 1,
+                'status' => $validated['status'] ?? null,
                 'start_date' => $validated['start_date'] ?? null,
-                'end_date'   => $validated['end_date']   ?? null,
-                'notes'      => $validated['notes']      ?? null,
+                'end_date' => $validated['end_date'] ?? null,
+                'notes' => $validated['notes'] ?? null,
             ]
         );
+
+        // Update member_order if the relationship already existed and a new value was supplied.
+        if (! $rel->wasRecentlyCreated && array_key_exists('member_order', $validated)) {
+            $rel->update(['member_order' => $validated['member_order'] ?? 1]);
+        }
 
         return response()->json($rel, $rel->wasRecentlyCreated ? 201 : 200);
     }
@@ -339,7 +378,7 @@ class FamilyMemberController extends Controller
     {
         $member = FamilyMember::findOrFail($id);
 
-        if (!$this->canAccessMember($request->user(), $member)) {
+        if (! $this->canAccessMember($request->user(), $member)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
@@ -369,18 +408,19 @@ class FamilyMemberController extends Controller
     {
         $accessibleFamilyIds = $user->isSuperAdmin()
             ? \App\Models\Family::pluck('id')->all()
-            : $user->familyAccess()->pluck('family_id')->all();            if ($familyId) {
-                if (!in_array((int) $familyId, $accessibleFamilyIds, true)) {
-                    throw new \Illuminate\Auth\Access\AuthorizationException('Forbidden.');
-                }
-                $query->where('family_members.family_id', $familyId);
-            } else {
-                $query->whereIn('family_members.family_id', $accessibleFamilyIds);
+            : $user->familyAccess()->pluck('family_id')->all();
+        if ($familyId) {
+            if (! in_array((int) $familyId, $accessibleFamilyIds, true)) {
+                throw new \Illuminate\Auth\Access\AuthorizationException('Forbidden.');
             }
+            $query->where('family_members.family_id', $familyId);
+        } else {
+            $query->whereIn('family_members.family_id', $accessibleFamilyIds);
+        }
 
-            if ($branchId) {
-                $query->where('family_members.branch_id', $branchId);
-            }
+        if ($branchId) {
+            $query->where('family_members.branch_id', $branchId);
+        }
 
         return $query;
     }
@@ -411,5 +451,36 @@ class FamilyMemberController extends Controller
         $accessibleFamilyIds = $user->familyAccess()->pluck('family_id')->all();
 
         return in_array($familyId, $accessibleFamilyIds, true);
+    }
+
+    /**
+     * Check if the user can create/update/delete a relationship between two members.
+     * Both members must belong to the same family and the user must have access to it.
+     */
+    private function canRelateMembers($user, int $member1Id, int $member2Id): bool
+    {
+        $members = \App\Models\FamilyMember::whereIn('id', [$member1Id, $member2Id])
+            ->where('is_active', true)
+            ->get()
+            ->keyBy('id');
+
+        if (! $members->has($member1Id) || ! $members->has($member2Id)) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        $accessibleFamilyIds = $user->familyAccess()->pluck('family_id')->all();
+
+        $family1 = (int) $members[$member1Id]->family_id;
+        $family2 = (int) $members[$member2Id]->family_id;
+
+        if ($family1 !== $family2) {
+            return false;
+        }
+
+        return in_array($family1, $accessibleFamilyIds, true);
     }
 }

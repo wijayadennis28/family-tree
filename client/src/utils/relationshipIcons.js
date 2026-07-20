@@ -1,14 +1,22 @@
-import { Heart, UsersThree } from '@phosphor-icons/react';
+import {
+  User,
+  Person,
+  Heart,
+  Users,
+  UsersThree,
+  UserCircle,
+  Baby,
+} from '@phosphor-icons/react';
 
 export const REL_ICON = {
-  Parent: <UsersThree />,
-  Child: <UsersThree />,
+  Parent: <User />,
+  Child: <Person />,
   Spouse: <Heart />,
-  Sibling: <UsersThree />,
-  Grandparent: <UsersThree />,
-  Grandchild: <UsersThree />,
+  Sibling: <Users />,
+  Grandparent: <UserCircle />,
+  Grandchild: <Baby />,
   'Uncle/Aunt': <UsersThree />,
-  'Niece/Nephew': <UsersThree />,
+  'Niece/Nephew': <Users />,
 };
 
 export const REL_TYPE_KEY = {

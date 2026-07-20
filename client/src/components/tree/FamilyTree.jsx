@@ -17,7 +17,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useApi } from '../../hooks/useApi';
 import { animateTreeIn } from '../../utils/gsapUtils';
 import { buildFamilyLayout } from '../../utils/familyLayout';
-import { buildTreeUrl, parseTreeSlug } from '../../utils/treeUrl';
+import { buildTreeUrl, parseHybridSlug, buildMemberUrl } from '../../utils/treeUrl';
 import TreeControls from './TreeControls';
 import FamilyNode, { MarriageNode } from './FamilyNode';
 import { FamilySpouseEdge, FamilyDropEdge, FamilyParentRailEdge } from './FamilyEdge';
@@ -56,33 +56,57 @@ function ActionPill({ onAction }) {
 
 /* ──────────────────────────────────────────
    Node counter for the sub-header label.
+   Counts unique member IDs across all roots (avoids double-counting
+   spouses/children that also appear as separate roots).
    ────────────────────────────────────────── */
-function countNodes(node) {
-  if (!node) return 0;
-  let count = 1 + (node.spouses?.length || 0);
-  if (node.children) node.children.forEach(c => { count += countNodes(c); });
-  return count;
+function collectMemberIds(node, seen = new Set()) {
+  if (!node || !node.id) return seen;
+  seen.add(String(node.id));
+  (node.spouses || []).forEach(s => seen.add(String(s.id)));
+  (node.children || []).forEach(c => collectMemberIds(c, seen));
+  return seen;
 }
 
 /* ──────────────────────────────────────────
    Directional-type body for Add / Connect ops.
    Mirrors RelationshipCanvas.buildRelBody.
    ────────────────────────────────────────── */
-function buildRelBody(sourceId, targetId, type, { fromPill = false } = {}) {
+function buildRelBody(sourceId, targetId, type, { fromPill = false, memberOrder = 1, familyId } = {}) {
+  const body = { relationship_type: type };
+  if (familyId !== undefined && familyId !== null) {
+    body.family_id = familyId;
+  }
+
   if (type === 'Child') {
-    return { relationship_type: 'Parent', parent_id: sourceId, child_id: targetId };
+    body.relationship_type = 'Parent';
+    body.parent_id = sourceId;
+    body.child_id = targetId;
+    if (memberOrder !== undefined) body.member_order = memberOrder;
+    return body;
   }
   if (type === 'Parent') {
     // Pill "Add Parent": selected member is the child, picked member is the new parent
     if (fromPill) {
-      return { relationship_type: 'Parent', parent_id: targetId, child_id: sourceId };
+      body.relationship_type = 'Parent';
+      body.parent_id = targetId;
+      body.child_id = sourceId;
+      if (memberOrder !== undefined) body.member_order = memberOrder;
+      return body;
     }
-    return { relationship_type: 'Parent', parent_id: sourceId, child_id: targetId };
+    body.relationship_type = 'Parent';
+    body.parent_id = sourceId;
+    body.child_id = targetId;
+    if (memberOrder !== undefined) body.member_order = memberOrder;
+    return body;
   }
   if (type === 'Spouse') {
-    return { member2_id: targetId, relationship_type: 'Spouse', status: 'Married' };
+    body.member2_id = targetId;
+    body.status = 'Married';
+    body.member_order = memberOrder;
+    return body;
   }
-  return { member2_id: targetId, relationship_type: type };
+  body.member2_id = targetId;
+  return body;
 }
 
 /** Locate a member inside the nested tree (includes spouse back-links). */
@@ -111,24 +135,37 @@ function findTreeNode(node, id) {
   return null;
 }
 
+/** Locate a member whether treeData is a single root or an array of roots. */
+function findNodeInTree(treeData, id) {
+  if (Array.isArray(treeData)) {
+    for (const root of treeData) {
+      const found = findTreeNode(root, id);
+      if (found) return found;
+    }
+    return null;
+  }
+  return findTreeNode(treeData, id);
+}
+
 /* ═══════════════════════════════════════════
    Main FamilyTree — unified React Flow canvas
    with automatic layout.
    ═══════════════════════════════════════════ */
-export default function FamilyTree() {
-  const { memberSlug, familyId: familyIdParam } = useParams();
-  const memberId = familyIdParam ? null : parseTreeSlug(memberSlug);
-  const familyId = familyIdParam ? Number(familyIdParam) : null;
-  const isFamilyView = Boolean(familyId);
+export default function FamilyTree({ publicView = false }) {
+  const { memberSlug, familySlug: familySlugParam } = useParams();
+  const memberId = familySlugParam ? null : parseHybridSlug(memberSlug);
+  const familySlug = familySlugParam || null;
+  const isFamilyView = Boolean(familySlug);
   const api = useApi();
   const navigate = useNavigate();
   const { hasAbility, activeFamily } = useContext(AuthContext);
   const { t } = useLanguage();
-  const canEdit = hasAbility('edit_tree', activeFamily?.id);
-  const canDelete = hasAbility('delete_member', activeFamily?.id);
+  const canEdit = !publicView && hasAbility('edit_tree', isFamilyView ? null : activeFamily?.id);
+  const canDelete = !publicView && hasAbility('delete_member', isFamilyView ? null : activeFamily?.id);
 
   // ── data ──────────────────────────────────
   const [treeData,       setTreeData]       = useState(null);
+  const [familyInfo,     setFamilyInfo]     = useState(null);
   const [loading,        setLoading]        = useState(true);
   const [error,          setError]          = useState(null);
 
@@ -155,7 +192,9 @@ export default function FamilyTree() {
     () => {
       if (!treeData) return 0;
       const roots = Array.isArray(treeData) ? treeData : [treeData];
-      return roots.reduce((sum, root) => sum + countNodes(root), 0);
+      const seen = new Set();
+      roots.forEach(root => collectMemberIds(root, seen));
+      return seen.size;
     },
     [treeData],
   );
@@ -163,7 +202,7 @@ export default function FamilyTree() {
   const pillSpouseOptions = useMemo(() => {
     if (!pillAction || !selectedMember || !treeData) return [];
     if (pillAction.type !== 'Child' && pillAction.type !== 'Parent') return [];
-    const node = findTreeNode(treeData, selectedMember.id);
+    const node = findNodeInTree(treeData, selectedMember.id);
     return (node?.spouses || []).map(s => ({ id: s.id, name: s.name }));
   }, [pillAction, selectedMember, treeData]);
 
@@ -173,9 +212,12 @@ export default function FamilyTree() {
     setError(null);
 
     if (isFamilyView) {
-      const [data, err] = await api.get(`/families/${familyId}/tree`);
+      const [data, err] = await api.get(`/families/${familySlug}/tree`);
       if (err) setError(err);
-      else setTreeData(data?.roots || []);
+      else {
+        setTreeData(data?.roots || []);
+        setFamilyInfo(data?.family || null);
+      }
     } else {
       if (!memberId) return;
       const familyParam = activeFamily?.id ? `&family_id=${activeFamily.id}` : '';
@@ -184,7 +226,7 @@ export default function FamilyTree() {
       else setTreeData(data);
     }
     setLoading(false);
-  }, [memberId, familyId, isFamilyView, activeFamily, api]);
+  }, [memberId, familySlug, isFamilyView, activeFamily, api]);
 
   useEffect(() => {
     refreshTree();
@@ -241,7 +283,7 @@ export default function FamilyTree() {
   const handlePillAction = (action) => {
     if (!selectedMember) return;
     if (action === 'edit') {
-      navigate(`/people/${selectedMember.id}/edit`);
+      navigate(`${buildMemberUrl(selectedMember)}/edit`);
       return;
     }
     if (action === 'delete') {
@@ -251,21 +293,32 @@ export default function FamilyTree() {
     const type = action === 'parent' ? 'Parent'
               : action === 'child'  ? 'Child'
               : 'Spouse';
-    setPillAction({ type, sourceId: selectedMember.id, sourceName: selectedMember.name });
+    setPillAction({
+      type,
+      sourceId: selectedMember.id,
+      sourceName: selectedMember.name,
+      sourceFamilyId: selectedMember.family_id,
+    });
   };
 
   // Save new relationship from pill modal
   const handleSaveRel = async (payload) => {
     if (!pillAction) return;
-    const { type, sourceId, targetId, selectedSpouses = [] } = payload || {};
-    const body = buildRelBody(Number(sourceId), Number(targetId), type, { fromPill: true });
+    const { type, sourceId, targetId, selectedSpouses = [], memberOrder = 1 } = payload || {};
+    const body = buildRelBody(Number(sourceId), Number(targetId), type, { fromPill: true, memberOrder, familyId: pillAction.sourceFamilyId });
     const [, err] = await api.post(`/members/${sourceId}/relationships`, body);
     if (err) return;
 
     if (type === 'Child' && selectedSpouses.length > 0) {
       for (const spouseId of selectedSpouses) {
         if (Number(spouseId) === Number(sourceId)) continue;
-        const coBody = buildRelBody(Number(spouseId), Number(targetId), 'Child');
+        const coBody = buildRelBody(Number(spouseId), Number(targetId), 'Child', { memberOrder, familyId: pillAction.sourceFamilyId });
+        await api.post(`/members/${spouseId}/relationships`, coBody);
+      }
+    } else if (type === 'Parent' && selectedSpouses.length > 0) {
+      for (const spouseId of selectedSpouses) {
+        if (Number(spouseId) === Number(targetId)) continue;
+        const coBody = buildRelBody(Number(spouseId), Number(sourceId), 'Child', { memberOrder, familyId: pillAction.sourceFamilyId });
         await api.post(`/members/${spouseId}/relationships`, coBody);
       }
     }
@@ -281,13 +334,18 @@ export default function FamilyTree() {
     if (!err) {
       setSelectedMember(null);
       setPillAction(null);
-      navigate(String(memberId) === String(member.id) ? '/people' : buildTreeUrl(member));
+      if (isFamilyView) {
+        await refreshTree();
+      } else {
+        navigate(String(memberId) === String(member.id) ? '/people' : buildTreeUrl(member));
+      }
     }
   };
 
   const handleNavigate = (member) => {
     setSelectedMember(null);
     setPillAction(null);
+    if (publicView) return;
     navigate(buildTreeUrl(member));
   };
 
@@ -302,6 +360,7 @@ export default function FamilyTree() {
     setEditConnection({
       sourceId:   srcNode.data.member.id,
       sourceName: srcNode.data.member.name,
+      sourceFamilyId: srcNode.data.member.family_id,
       targetId:   tgtNode.data.member.id,
       targetName: tgtNode.data.member.name,
     });
@@ -310,10 +369,23 @@ export default function FamilyTree() {
   /** Save connection from edit-mode drag modal */
   const handleEditConnectSave = async (payload) => {
     if (!editConnection) return;
-    const { type, sourceId, targetId } = payload || {};
-    const body = buildRelBody(Number(sourceId), Number(targetId), type);
+    const { type, sourceId, targetId, selectedSpouses = [], memberOrder = 1 } = payload || {};
+    const body = buildRelBody(Number(sourceId), Number(targetId), type, { memberOrder, familyId: editConnection.sourceFamilyId });
     const [, err] = await api.post(`/members/${sourceId}/relationships`, body);
     if (!err) {
+      if (type === 'Child' && selectedSpouses.length > 0) {
+        for (const spouseId of selectedSpouses) {
+          if (Number(spouseId) === Number(sourceId)) continue;
+          const coBody = buildRelBody(Number(spouseId), Number(targetId), 'Child', { memberOrder, familyId: editConnection.sourceFamilyId });
+          await api.post(`/members/${spouseId}/relationships`, coBody);
+        }
+      } else if (type === 'Parent' && selectedSpouses.length > 0) {
+        for (const spouseId of selectedSpouses) {
+          if (Number(spouseId) === Number(targetId)) continue;
+          const coBody = buildRelBody(Number(spouseId), Number(sourceId), 'Child', { memberOrder, familyId: editConnection.sourceFamilyId });
+          await api.post(`/members/${spouseId}/relationships`, coBody);
+        }
+      }
       setEditConnection(null);
       await refreshTree();
     }
@@ -330,9 +402,11 @@ export default function FamilyTree() {
         (n.parents || []).forEach(p => ids.add(p.id));
         (n.children || []).forEach(c => collect(c));
       };
-      if (treeData?.id === selectedMember.id) collect(treeData);
+      const node = findNodeInTree(treeData, selectedMember.id);
+      if (node) collect(node);
     } else if (pillAction.type === 'Child') {
-      (treeData?.children || []).forEach(c => ids.add(c.id));
+      const node = findNodeInTree(treeData, selectedMember.id);
+      (node?.children || []).forEach(c => ids.add(c.id));
     }
     return Array.from(ids);
   })();
@@ -358,15 +432,17 @@ export default function FamilyTree() {
   }
 
   return (
-    <div className="ft-page">
+    <div className={`ft-page${publicView ? ' ft-page-public' : ''}`}>
       <TreeControls
         zoomLevel={zoomLevel}
         onZoomIn={() => rfRef.current?.zoomIn({ duration: 200 })}
         onZoomOut={() => rfRef.current?.zoomOut({ duration: 200 })}
         onReset={() => rfRef.current?.fitView({ duration: 300, padding: 0.2 })}
         memberCount={memberCount}
+        familyName={publicView ? familyInfo?.name : undefined}
         editMode={editMode}
-        onToggleEditMode={isFamilyView ? undefined : () => setEditMode(m => !m)}
+        onToggleEditMode={isFamilyView || publicView ? undefined : () => setEditMode(m => !m)}
+        publicView={publicView}
       />
 
       <div className="ft-reactflow-container">
@@ -378,7 +454,11 @@ export default function FamilyTree() {
         )}
 
         {!loading && error && (
-          <div className="ft-error">Could not load tree. Please check the member ID and try again.</div>
+          <div className="ft-error">
+            {publicView && error === 'Forbidden.'
+              ? t('families.privateFamilyError')
+              : 'Could not load tree. Please check the member ID and try again.'}
+          </div>
         )}
 
         {!loading && Array.isArray(treeData) && treeData.length === 0 && isFamilyView && (
@@ -427,7 +507,7 @@ export default function FamilyTree() {
             />
 
             {/* ActionPill — ability-gated, NodeToolbar-anchored to the selected card */}
-            {canEdit && selectedMemberId && !editMode && !isFamilyView && (
+            {canEdit && selectedMemberId && !editMode && (
               <NodeToolbar
                 nodeId={selectedMemberId}
                 position={Position.Bottom}
@@ -448,6 +528,7 @@ export default function FamilyTree() {
           treeData={treeData}
           onClose={() => { setSelectedMember(null); setPillAction(null); }}
           onNavigate={handleNavigate}
+          publicView={publicView}
         />
       )}
 
@@ -456,6 +537,7 @@ export default function FamilyTree() {
         open={!!pillAction}
         sourceId={pillAction?.sourceId}
         sourceName={pillAction?.sourceName}
+        sourceFamilyId={pillAction?.sourceFamilyId}
         defaultType={pillAction?.type}
         targetPicker
         targetPickerExcludeIds={pickerExcludeIds}
@@ -469,6 +551,7 @@ export default function FamilyTree() {
         open={!!editConnection}
         sourceId={editConnection?.sourceId}
         sourceName={editConnection?.sourceName}
+        sourceFamilyId={editConnection?.sourceFamilyId}
         targetId={editConnection?.targetId}
         targetName={editConnection?.targetName}
         onSave={handleEditConnectSave}
